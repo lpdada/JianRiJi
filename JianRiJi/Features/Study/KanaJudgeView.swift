@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 假名判断：给词形（汉字），从四个读音里选一个。
-/// 对应识日的 `screens/Memorize/studyType/KnowVocabulary` + `Phonetic` 一路。
+/// 假名判断模式：看词形选读音，四选一。
 struct KanaJudgeView: View {
     @EnvironmentObject private var store: Store
 

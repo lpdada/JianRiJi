@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 连连看：左列日文、右列中文，两两配对。
-/// 对应识日的 `screens/Memorize/MyReview/Lianlianka`。
+/// 连连看模式：日文配中文，四组一轮。
 struct LianliankaView: View {
     @EnvironmentObject private var store: Store
 

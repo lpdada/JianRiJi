@@ -1,6 +1,6 @@
 import Foundation
 
-/// 学习模式的分类。命名与识日的 `screens/Memorize/*` 目录对齐，便于逐项比对。
+/// 学习模式的分类。
 enum StudyMode: String, CaseIterable, Identifiable, Hashable {
     /// ClassicReview / QuickReview
     case review
@@ -14,7 +14,7 @@ enum StudyMode: String, CaseIterable, Identifiable, Hashable {
     case listen
     /// 手写输入（v0.3.0 新增）：看中文意思，在画布上写词形
     case handwriting
-    /// 经典模式（v0.4.0 新增）：参考截图的大字词卡 + 注音例句，洗脑循环 + 下一词
+    /// 经典模式（v0.4.0 新增）：大字词卡 + 注音例句，洗脑循环 + 下一词
     case classic
 
     var id: String { rawValue }

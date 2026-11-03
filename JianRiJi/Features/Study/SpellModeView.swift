@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 拼写：听读音 / 看释义，把罗马字敲出来。
-/// 对应识日的 `screens/Memorize/studyMode/SpellScreen02`、`studyType/DetailSpell`。
+/// 拼写模式：听读音、看释义，敲罗马字作答。
 struct SpellModeView: View {
     @EnvironmentObject private var store: Store
 

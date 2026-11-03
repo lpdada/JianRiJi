@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// 对齐识日的视觉基调：深绿主色 + 薄荷浅绿块 + 白纸底，几乎不用阴影。
+/// 视觉基调：深绿主色 + 薄荷浅绿块 + 白纸底，几乎不用阴影。
 enum Theme {
     /// 主绿（标题、进度、实心按钮）
     static let accent = Color(red: 0.055, green: 0.420, blue: 0.310)

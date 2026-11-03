@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 随身听：把当前词本的词按顺序连播，锁屏/后台也能继续。
-/// 对应识日的 `screens/Memorize/studyMode/SuishentingScreenV2` 与 `untils/StudyAudioOwner` 一路。
+/// 随身听模式：连播当前词本，可循环、可调间隔、支持后台音频。
 struct SuishentingView: View {
     @EnvironmentObject private var store: Store
 

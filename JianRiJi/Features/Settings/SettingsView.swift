@@ -169,7 +169,7 @@ struct SettingsView: View {
                 } header: {
                     Text("关于")
                 } footer: {
-                    Text("简日记是独立实现，跟「识日」没有关系，也没有拷它的代码或词库。词库与语法来源见 README 的「词库」一节。")
+                    Text("简日记是独立的日语学习 App。词库与语法来源见 README 的「词库」一节。")
                 }
             }
             .scrollContentBackground(.hidden)
