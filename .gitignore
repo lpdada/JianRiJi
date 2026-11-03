@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# XcodeGen 生成物（工程由 project.yml 生成，不入库）
+JianRiJi.xcodeproj/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+
+# CocoaPods / Carthage（本项目不用，防止误加）
+Pods/
+Carthage/
+
+# 本地环境
+.env
+.env.*
+*.log
