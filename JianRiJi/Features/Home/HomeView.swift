@@ -2,38 +2,52 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var store: Store
-    @Binding var selection: RootTab
 
+    @State private var query = ""
     @State private var showDictation = false
+    @State private var showReview = false
 
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<11: return "早上好"
-        case 11..<14: return "中午好"
-        case 14..<18: return "下午好"
-        case 18..<23: return "晚上好"
-        default: return "夜深了"
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var visibleDecks: [Deck] {
+        guard !trimmedQuery.isEmpty else { return store.decks }
+        return store.decks.filter {
+            $0.title.localizedCaseInsensitiveContains(trimmedQuery)
+                || $0.subtitle.localizedCaseInsensitiveContains(trimmedQuery)
+                || $0.badge.localizedCaseInsensitiveContains(trimmedQuery)
         }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    todayCard
-                    primaryActions
-                    statRow
-                    weekSection
-                    footerNote
+                VStack(spacing: 14) {
+                    todayStrip
+                    searchBar
+                    deckList
+                    footer
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 6)
                 .padding(.bottom, 28)
             }
             .background(Theme.paper.ignoresSafeArea())
-            .navigationTitle("简日记")
+            .navigationTitle("词本")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showReview) {
+                ReviewView()
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showDictation = true
+                    } label: {
+                        Image(systemName: "ear")
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showDictation) {
             DictationView()
@@ -41,129 +55,182 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - 今天
+    // MARK: - 今日
 
-    private var todayCard: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("\(greeting)，慢慢来。")
-                    .font(.title3.weight(.semibold))
+    private var todayStrip: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RingProgress(value: store.todayProgress, lineWidth: 7)
+                Text("\(Int(store.todayProgress * 100))%")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.accent)
+            }
+            .frame(width: 52, height: 52)
 
-                Text(DateText.monthDay.string(from: Date()))
-                    .font(.caption)
-                    .foregroundStyle(Theme.muted)
-
-                HStack(spacing: 6) {
-                    Pill(text: "待复习 \(store.remainingDueCount)", tint: Theme.accent)
-                    Pill(text: "新词 \(min(store.newAllowance, store.freshWords.count))", tint: Theme.jade)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(store.currentDeckTitle) · 今天")
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 10) {
+                    stat("待复习", "\(store.remainingDueCount)")
+                    stat("新词", "\(min(store.newAllowance, store.freshWords.count))")
                     if store.streak > 0 {
-                        Pill(text: "连 \(store.streak) 天", tint: Theme.indigo)
+                        stat("连击", "\(store.streak)")
                     }
                 }
-                .padding(.top, 2)
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 0)
 
-            VStack(spacing: 6) {
-                ZStack {
-                    RingProgress(value: store.todayProgress, lineWidth: 8)
-                    Text("\(Int(store.todayProgress * 100))%")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                }
-                .frame(width: 64, height: 64)
-
-                Text("今日")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.muted)
-            }
-        }
-        .paperCard(padding: 16)
-    }
-
-    private var primaryActions: some View {
-        VStack(spacing: 10) {
             Button {
-                selection = .review
+                showReview = true
             } label: {
-                HStack {
-                    Image(systemName: "rectangle.stack.fill")
-                    Text(store.remainingDueCount + min(store.newAllowance, store.freshWords.count) > 0
-                         ? "开始今天的复习"
-                         : "加练一轮")
-                    Spacer()
-                    Text("\(store.remainingDueCount + min(store.newAllowance, store.freshWords.count)) 张")
-                        .font(.subheadline.weight(.medium))
-                        .opacity(0.85)
-                }
-                .padding(.horizontal, 16)
+                Image(systemName: "play.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.accent, in: Circle())
             }
-            .buttonStyle(PrimaryButtonStyle())
-
-            HStack(spacing: 10) {
-                Button {
-                    showDictation = true
-                } label: {
-                    Label("听写", systemImage: "ear")
-                }
-                .buttonStyle(GhostButtonStyle(tint: Theme.jade))
-
-                Button {
-                    selection = .dictionary
-                } label: {
-                    Label("查词", systemImage: "magnifyingglass")
-                }
-                .buttonStyle(GhostButtonStyle(tint: Theme.indigo))
-
-                Button {
-                    selection = .kana
-                } label: {
-                    Label("五十音", systemImage: "square.grid.3x3")
-                }
-                .buttonStyle(GhostButtonStyle(tint: Theme.accent))
-
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private var statRow: some View {
-        HStack(spacing: 0) {
-            StatBlock(value: "\(store.masteredCount)", label: "已掌握", tint: Theme.jade)
-            Divider().frame(height: 28)
-            StatBlock(value: "\(store.learningCount)", label: "学习中", tint: Theme.accent)
-            Divider().frame(height: 28)
-            StatBlock(value: "\(store.totalCount)", label: "词库", tint: Theme.indigo)
+            .buttonStyle(.plain)
         }
         .paperCard(padding: 14)
     }
 
-    private var weekSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("最近七天")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                if let accuracy = store.accuracy {
-                    Text("正确率 \(Int(accuracy * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(Theme.muted)
-                }
-            }
-            WeekBars(data: store.weekCounts)
+    private func stat(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.accent)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
         }
-        .paperCard(padding: 16)
     }
 
-    private var footerNote: some View {
-        VStack(spacing: 4) {
+    // MARK: - 搜索
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.subheadline)
+                .foregroundStyle(Theme.muted)
+
+            TextField("搜索词本", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .submitLabel(.search)
+
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.muted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Theme.card, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
+    }
+
+    // MARK: - 词本
+
+    private var deckList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 16) {
+                Text("全部词本")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.bottom, 6)
+
+            Rectangle()
+                .fill(Theme.hairline.opacity(0.5))
+                .frame(height: 0.6)
+
+            if visibleDecks.isEmpty {
+                EmptyHint(icon: "books.vertical", title: "没有匹配的词本", detail: "换个关键词，或者清空搜索。")
+            } else {
+                ForEach(Array(visibleDecks.enumerated()), id: \.element.id) { offset, deck in
+                    deckRow(deck, tint: Theme.deckTints[offset % Theme.deckTints.count])
+                    if offset != visibleDecks.count - 1 {
+                        Rectangle()
+                            .fill(Theme.hairline.opacity(0.4))
+                            .frame(height: 0.6)
+                            .padding(.leading, 76)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func deckRow(_ deck: Deck, tint: Color) -> some View {
+        Button {
+            store.selectDeck(deck)
+            showReview = true
+        } label: {
+            HStack(spacing: 14) {
+                cover(deck, tint: tint)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(deck.title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                    Text(deck.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.muted)
+                    Text("共 \(deck.count) 词")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.muted)
+                        .padding(.top, 2)
+                }
+
+                Spacer(minLength: 6)
+
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.muted.opacity(0.6))
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func cover(_ deck: Deck, tint: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(tint.opacity(0.16))
+            VStack(spacing: 2) {
+                Text(deck.badge)
+                    .font(.system(size: deck.isAll ? 15 : 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(tint)
+                Text(deck.isAll ? "ALL" : "JLPT")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(tint.opacity(0.75))
+            }
+        }
+        .frame(width: 54, height: 68)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(tint.opacity(0.25), lineWidth: 0.8)
+        )
+    }
+
+    private var footer: some View {
+        VStack(spacing: 3) {
             Text("一天二十张，比一口气两百张有用。")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
-            Text("简日记 v0.1.0 · MIT")
+            Text("简日记 v0.2.0 · MIT")
                 .font(.caption2)
                 .foregroundStyle(Theme.muted.opacity(0.7))
         }
-        .padding(.top, 6)
+        .padding(.top, 10)
     }
 }

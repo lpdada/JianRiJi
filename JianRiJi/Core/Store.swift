@@ -12,9 +12,11 @@ struct AppSettings: Codable, Equatable {
     var autoSpeak: Bool = false
     /// 朗读速度，0.3 ~ 0.6
     var speechRate: Double = 0.45
+    /// 当前词本 id，`all` 为全部
+    var deckFilter: String = Deck.allID
 
     enum CodingKeys: String, CodingKey {
-        case dailyGoal, reviewLimit, showRomaji, autoSpeak, speechRate
+        case dailyGoal, reviewLimit, showRomaji, autoSpeak, speechRate, deckFilter
     }
 
     init() {}
@@ -26,6 +28,7 @@ struct AppSettings: Codable, Equatable {
         showRomaji = try c.decodeIfPresent(Bool.self, forKey: .showRomaji) ?? true
         autoSpeak = try c.decodeIfPresent(Bool.self, forKey: .autoSpeak) ?? false
         speechRate = try c.decodeIfPresent(Double.self, forKey: .speechRate) ?? 0.45
+        deckFilter = try c.decodeIfPresent(String.self, forKey: .deckFilter) ?? Deck.allID
     }
 }
 
@@ -159,10 +162,53 @@ final class Store: ObservableObject {
 
     var totalCount: Int { words.count }
 
+    // MARK: - 词本
+
+    /// 当前词本范围内的词。
+    var scopedWords: [Word] {
+        let id = settings.deckFilter
+        return id == Deck.allID ? words : words.filter { $0.jlpt == id }
+    }
+
+    var decks: [Deck] {
+        let levels = ["N5", "N4", "N3", "N2", "N1"]
+        let subtitles: [String: String] = [
+            "N5": "入门核心词汇",
+            "N4": "基础进阶词汇",
+            "N3": "中级词汇",
+            "N2": "高级词汇",
+            "N1": "精通词汇"
+        ]
+        var result: [Deck] = [
+            Deck(id: Deck.allID, title: "全部词本", subtitle: "N5 → N3 全部词条", badge: "全", words: words)
+        ]
+        for level in levels {
+            let subset = words.filter { $0.jlpt == level }
+            guard !subset.isEmpty else { continue }
+            result.append(Deck(
+                id: level,
+                title: "JLPT \(level)",
+                subtitle: subtitles[level] ?? "",
+                badge: level,
+                words: subset
+            ))
+        }
+        return result
+    }
+
+    var currentDeckTitle: String {
+        decks.first { $0.id == settings.deckFilter }?.title ?? "全部词本"
+    }
+
+    func selectDeck(_ deck: Deck) {
+        settings.deckFilter = deck.id
+        objectWillChange.send()
+    }
+
     /// 到期且不是新词的卡片，按到期时间排。
     var dueReviews: [Word] {
         let now = Date()
-        return words
+        return scopedWords
             .filter { word in
                 guard let s = cards[word.id] else { return false }
                 return !s.isNew && s.due <= now
@@ -173,7 +219,7 @@ final class Store: ObservableObject {
     }
 
     var freshWords: [Word] {
-        words.filter { cards[$0.id]?.isNew ?? false }
+        scopedWords.filter { cards[$0.id]?.isNew ?? false }
     }
 
     var todayStart: Date { calendar.startOfDay(for: Date()) }

@@ -19,9 +19,11 @@ struct Word: Identifiable, Codable, Hashable {
     let example: String?
     /// 例句中文，可为空
     let exampleZh: String?
+    /// 变形表等补充形式，可为空。旧 JSON 里没有这个键时解码为 nil，不影响已有词条。
+    let variants: [String: String]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, term, reading, romaji, meaning, jlpt, example
+        case id, term, reading, romaji, meaning, jlpt, example, variants
         case partOfSpeech = "pos"
         case exampleZh = "example_zh"
     }

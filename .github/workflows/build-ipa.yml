@@ -1,0 +1,67 @@
+name: Build unsigned IPA
+
+# 只接受手动触发，跟 CY 的 Build unsigned IPA 一个规矩：push 不会自动跑，
+# 必须 gh workflow run "Build unsigned IPA" --ref main 手动触发。
+# 产物是未签名 IPA，没有开发者账号也能打；拿到后用自己的个人 Apple ID 自签再装机。
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16 if available
+        run: |
+          set -euo pipefail
+          APP=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$APP" ]; then
+            sudo xcode-select -s "$APP"
+            echo "selected $APP"
+          else
+            echo "no Xcode 16 app found, keeping runner default"
+          fi
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Archive (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project JianRiJi.xcodeproj \
+            -scheme JianRiJi \
+            -destination "generic/platform=iOS" \
+            -archivePath build/JianRiJi.xcarchive \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/JianRiJi.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
+          echo "app: $APP_PATH"
+          test -n "$APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r JianRiJi-unsigned.ipa Payload
+          ls -lh JianRiJi-unsigned.ipa
+          unzip -l JianRiJi-unsigned.ipa | head -40
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: JianRiJi-unsigned-ipa
+          path: JianRiJi-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

@@ -2,7 +2,7 @@ import SwiftUI
 
 enum RootTab: Hashable {
     case home
-    case review
+    case study
     case kana
     case dictionary
     case settings
@@ -14,20 +14,20 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            HomeView(selection: $selection)
-                .tabItem { Label("今天", systemImage: "sun.max") }
+            HomeView()
+                .tabItem { Label("词本", systemImage: "books.vertical") }
                 .tag(RootTab.home)
 
-            ReviewView()
-                .tabItem { Label("背单词", systemImage: "rectangle.stack") }
-                .tag(RootTab.review)
+            StudyHubView()
+                .tabItem { Label("学习", systemImage: "graduationcap") }
+                .tag(RootTab.study)
 
             KanaChartView()
                 .tabItem { Label("五十音", systemImage: "square.grid.3x3") }
                 .tag(RootTab.kana)
 
             DictionaryView()
-                .tabItem { Label("词典", systemImage: "magnifyingglass") }
+                .tabItem { Label("查词", systemImage: "magnifyingglass") }
                 .tag(RootTab.dictionary)
 
             SettingsView()

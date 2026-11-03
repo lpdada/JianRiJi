@@ -8,6 +8,7 @@ struct ReviewView: View {
     @State private var revealed = false
     @State private var phase: Phase = .idle
     @State private var counts = SessionCounts()
+    @State private var showList = false
 
     enum Phase {
         case idle, running, done
@@ -36,8 +37,7 @@ struct ReviewView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 Theme.paper.ignoresSafeArea()
 
                 switch phase {
@@ -47,141 +47,237 @@ struct ReviewView: View {
                     finishView
                 }
             }
-            .navigationTitle("背单词")
+            .navigationTitle(store.currentDeckTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("结束") {
-                        Speech.shared.stop()
-                        phase = .done
+                    Menu {
+                        Button {
+                            showList = true
+                        } label: {
+                            Label("查看列表", systemImage: "list.bullet")
+                        }
+                        Button {
+                            Speech.shared.stop()
+                            start()
+                        } label: {
+                            Label("重新开始", systemImage: "arrow.clockwise")
+                        }
+                        Button(role: .destructive) {
+                            Speech.shared.stop()
+                            phase = .done
+                        } label: {
+                            Label("结束本轮", systemImage: "xmark")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
                     }
-                    .disabled(phase != .running)
-                    .opacity(phase == .running ? 1 : 0)
                 }
             }
-        }
         .onAppear {
             if phase == .idle { start() }
         }
+        .sheet(isPresented: $showList) {
+            QueueListView(queue: queue, currentIndex: index, title: store.currentDeckTitle)
+        }
     }
 
-    // MARK: - 运行中
+    // MARK: - 卡片
 
     @ViewBuilder
     private var runningView: some View {
         if let word = current {
-            VStack(spacing: 12) {
-                progressHeader
-                cardView(word)
+            VStack(spacing: 0) {
+                progressBar
 
-                if revealed {
-                    gradeRow
-                } else {
-                    Button {
-                        reveal()
-                    } label: {
-                        Text("看答案")
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        titleBlock(word)
+                        actionPills(word)
+                        meaningBlock(word)
+                        if word.example != nil {
+                            exampleBlock(word)
+                        }
+                        if revealed {
+                            gradeRow
+                        }
                     }
-                    .buttonStyle(PrimaryButtonStyle())
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 24)
                 }
 
-                Spacer(minLength: 0)
+                bottomBar
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 6)
         } else {
-            EmptyHint(icon: "checkmark.seal", title: "这一轮走完了", detail: "回去点「再来一轮」继续。")
+            EmptyHint(icon: "checkmark.seal", title: "这一轮走完了", detail: "点右上角重新开始。")
         }
     }
 
-    private var progressHeader: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Text("第 \(min(index + 1, queue.count)) / \(queue.count) 张")
-                    .font(.caption)
-                    .foregroundStyle(Theme.muted)
-                Spacer()
-                Text("本轮 \(counts.total) 次")
-                    .font(.caption)
+    private var progressBar: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Theme.mint)
+                Capsule()
+                    .fill(Theme.accent)
+                    .frame(width: max(6, geo.size.width * progress))
+            }
+        }
+        .frame(height: 6)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    private var progress: CGFloat {
+        guard !queue.isEmpty else { return 0 }
+        return CGFloat(index) / CGFloat(queue.count)
+    }
+
+    private func titleBlock(_ word: Word) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(word.term)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.accent)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+
+                Text("\(word.reading)  |  \(word.romaji)")
+                    .font(.subheadline)
                     .foregroundStyle(Theme.muted)
             }
-            ProgressView(value: Double(index), total: Double(max(1, queue.count)))
-                .tint(Theme.accent)
-        }
-    }
 
-    private func cardView(_ word: Word) -> some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 6) {
-                Pill(text: word.jlpt, tint: Theme.indigo)
-                Pill(text: word.partOfSpeech)
-                Spacer()
+            Spacer(minLength: 8)
+
+            HStack(spacing: 14) {
                 Button {
-                    Speech.shared.speak(word.reading, rate: store.settings.speechRate)
+                    store.toggleFavorite(word)
                 } label: {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.subheadline)
+                    Image(systemName: store.isFavorite(word) ? "star.fill" : "star")
+                        .foregroundStyle(store.isFavorite(word) ? Theme.accent : Theme.muted)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    revealed.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
                         .foregroundStyle(Theme.muted)
-                        .padding(6)
                 }
                 .buttonStyle(.plain)
             }
+            .font(.system(size: 17))
+        }
+    }
 
+    private func actionPills(_ word: Word) -> some View {
+        HStack(spacing: 8) {
+            capsule("发音", icon: "speaker.wave.2.fill") {
+                Speech.shared.speak(word.reading, rate: store.settings.speechRate)
+            }
+            capsule("慢速", icon: "tortoise.fill") {
+                Speech.shared.speak(word.reading, rate: max(0.30, store.settings.speechRate - 0.15))
+            }
+            capsule("收藏", icon: "star.fill") {
+                store.toggleFavorite(word)
+            }
             Spacer(minLength: 0)
+        }
+    }
 
-            Text(word.term)
-                .font(.system(size: 62, weight: .medium, design: .rounded))
-                .minimumScaleFactor(0.4)
-                .lineLimit(1)
-                .multilineTextAlignment(.center)
-
-            if revealed {
-                VStack(spacing: 10) {
-                    Text(word.reading)
-                        .font(.title3)
-                        .foregroundStyle(Theme.muted)
-
-                    if store.settings.showRomaji {
-                        Text(word.romaji)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.muted.opacity(0.8))
-                    }
-
-                    Divider().padding(.vertical, 2)
-
-                    Text(word.meaning)
-                        .font(.title2.weight(.semibold))
-                        .multilineTextAlignment(.center)
-
-                    if let example = word.example {
-                        VStack(spacing: 4) {
-                            Text(example)
-                                .font(.footnote)
-                            if let zh = word.exampleZh {
-                                Text(zh)
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.muted)
-                            }
-                        }
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 2)
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else {
-                Text("先自己在心里过一遍，再翻开")
+    private func capsule(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                Text(title)
                     .font(.footnote)
+            }
+            .foregroundStyle(Theme.indigo)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Theme.mint.opacity(0.55), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func meaningBlock(_ word: Word) -> some View {
+        Button {
+            reveal(word)
+        } label: {
+            VStack(spacing: 6) {
+                if revealed {
+                    Text(word.meaning)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color.primary)
+                        .multilineTextAlignment(.center)
+                    HStack(spacing: 6) {
+                        Pill(text: word.partOfSpeech, tint: Theme.indigo)
+                        Pill(text: word.jlpt, tint: Theme.accent)
+                    }
+                } else {
+                    Text("点击查看词义")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 96)
+            .padding(12)
+            .background(Theme.mint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func exampleBlock(_ word: Word) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("单词例句")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.indigo)
+                .padding(.bottom, 3)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Theme.accent)
+                        .frame(height: 1.6)
+                }
+
+            if let example = word.example {
+                Text(example)
+                    .font(.system(size: 17))
+                    .lineSpacing(4)
+            }
+
+            if let zh = word.exampleZh {
+                Text(zh)
+                    .font(.subheadline)
                     .foregroundStyle(Theme.muted)
             }
 
-            Spacer(minLength: 0)
+            HStack(spacing: 14) {
+                Button {
+                    Speech.shared.speak(word.example ?? word.reading, rate: store.settings.speechRate)
+                } label: {
+                    Label("发音", systemImage: "speaker.wave.2.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.indigo)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    store.toggleFavorite(word)
+                } label: {
+                    Label("收藏", systemImage: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.indigo)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+            .padding(.top, 2)
         }
-        .frame(maxWidth: .infinity, minHeight: 320)
-        .paperCard(padding: 20)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if !revealed { reveal() }
-        }
+        .padding(.top, 4)
     }
 
     private var gradeRow: some View {
@@ -190,32 +286,59 @@ struct ReviewView: View {
                 Button {
                     pick(grade)
                 } label: {
-                    VStack(spacing: 2) {
-                        Text(grade.title)
-                            .font(.subheadline.weight(.semibold))
-                        Text(grade.subtitle)
-                            .font(.system(size: 9))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .opacity(0.8)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(tint(grade).opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text(grade.title)
+                        .font(.footnote.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(tint(grade).opacity(0.14), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(tint(grade))
             }
         }
+        .padding(.top, 4)
     }
 
-    private func tint(_ grade: ReviewGrade) -> Color {
-        switch grade {
-        case .again: return Theme.accent
-        case .hard: return Color.orange
-        case .good: return Theme.jade
-        case .easy: return Theme.indigo
+    private var bottomBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                showList = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "list.bullet")
+                        .font(.footnote)
+                    Text("列表")
+                        .font(.subheadline)
+                }
+                .foregroundStyle(Theme.indigo)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            Button {
+                pick(.good)
+            } label: {
+                HStack(spacing: 5) {
+                    Text("下一词")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 11)
+                .background(Theme.accent.opacity(revealed ? 1 : 0.35), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!revealed)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Theme.paper)
     }
 
     // MARK: - 结算
@@ -225,12 +348,16 @@ struct ReviewView: View {
             Spacer(minLength: 0)
 
             if counts.total == 0 && queue.isEmpty {
-                EmptyHint(icon: "moon.zzz", title: "今天已经清空了", detail: "没到期就没有新东西——休息也是复习的一部分。")
+                EmptyHint(
+                    icon: "moon.zzz",
+                    title: "今天已经清空了",
+                    detail: "没到期就没有新东西——休息也是复习的一部分。"
+                )
             } else {
                 VStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle")
+                    Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 40, weight: .light))
-                        .foregroundStyle(Theme.jade)
+                        .foregroundStyle(Theme.accent)
                     Text("这一轮结束了")
                         .font(.title3.weight(.semibold))
                     Text("共 \(counts.total) 张 · 记得 \(counts.good + counts.easy) · 模糊 \(counts.hard) · 忘了 \(counts.again)")
@@ -246,13 +373,13 @@ struct ReviewView: View {
             } label: {
                 Text("再来一轮")
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .buttonStyle(PrimaryButtonStyle(fill: Theme.accent))
 
             Text("忘了的词会在 10 分钟后再出现。")
                 .font(.caption2)
                 .foregroundStyle(Theme.muted)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.bottom, 20)
     }
 
@@ -267,11 +394,20 @@ struct ReviewView: View {
         phase = queue.isEmpty ? .done : .running
     }
 
-    private func reveal() {
-        guard let word = current else { return }
-        withAnimation(.easeOut(duration: 0.2)) { revealed = true }
+    private func reveal(_ word: Word) {
+        guard !revealed else { return }
+        withAnimation(.easeOut(duration: 0.18)) { revealed = true }
         if store.settings.autoSpeak {
             Speech.shared.speak(word.reading, rate: store.settings.speechRate)
+        }
+    }
+
+    private func tint(_ grade: ReviewGrade) -> Color {
+        switch grade {
+        case .again: return Color(red: 0.78, green: 0.32, blue: 0.28)
+        case .hard: return Color(red: 0.72, green: 0.52, blue: 0.20)
+        case .good: return Theme.accent
+        case .easy: return Theme.jade
         }
     }
 
@@ -280,7 +416,6 @@ struct ReviewView: View {
         store.grade(word: word, grade: grade)
         counts.record(grade)
 
-        // 忘了的，这轮末尾再给一次手感
         if grade == .again, queue.count < 200 {
             queue.append(word)
         }
@@ -291,6 +426,80 @@ struct ReviewView: View {
             withAnimation(.easeOut(duration: 0.2)) { phase = .done }
         } else {
             withAnimation(.easeInOut(duration: 0.18)) { index += 1 }
+        }
+    }
+}
+
+/// 「列表速过」：整轮队列摊平，当前项高亮。
+struct QueueListView: View {
+    let queue: [Word]
+    let currentIndex: Int
+    let title: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(queue.enumerated()), id: \.offset) { offset, word in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Text(word.meaning)
+                                    .font(.system(size: 17, weight: .semibold))
+                                Text("｜")
+                                    .foregroundStyle(Theme.muted)
+                                Text(word.reading)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.muted)
+                            }
+
+                            tagRow("日文", word.term)
+                            tagRow("中文", word.meaning)
+
+                            if offset == currentIndex {
+                                Text("点击查看词义")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.accent)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Theme.mint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .padding(.top, 2)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+
+                        Rectangle()
+                            .fill(Theme.hairline.opacity(0.4))
+                            .frame(height: 0.6)
+                            .padding(.leading, 16)
+                    }
+                }
+            }
+            .background(Theme.paper.ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func tagRow(_ tag: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(tag)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.indigo)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Theme.mint, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

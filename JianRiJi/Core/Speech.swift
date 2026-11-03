@@ -7,6 +7,7 @@ final class Speech {
 
     private let synthesizer = AVSpeechSynthesizer()
     private let voice = AVSpeechSynthesisVoice(language: "ja-JP")
+    private var sessionConfigured = false
 
     private init() {
         #if DEBUG
@@ -18,7 +19,23 @@ final class Speech {
 
     var hasJapaneseVoice: Bool { voice != nil }
 
+    /// 打开后台播放的音频会话（随身听连播时需要，Info.plist 里有 UIBackgroundModes: audio）。
+    func activateSession() {
+        guard !sessionConfigured else { return }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try session.setActive(true)
+            sessionConfigured = true
+        } catch {
+            #if DEBUG
+            print("[JianRiJi] 音频会话配置失败：\(error)")
+            #endif
+        }
+    }
+
     func speak(_ text: String, rate: Double = 0.45) {
+        activateSession()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if synthesizer.isSpeaking {
