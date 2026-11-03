@@ -235,7 +235,7 @@ struct HandwritingView: View {
         request.usesLanguageCorrection = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let handler = VNImageRequestHandler(cgImage, options: [:])
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try? handler.perform([request])
         }
     }
