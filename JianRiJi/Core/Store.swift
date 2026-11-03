@@ -73,6 +73,7 @@ private struct PersistedState: Codable {
 @MainActor
 final class Store: ObservableObject {
     @Published private(set) var words: [Word] = []
+    @Published private(set) var grammarPoints: [GrammarPoint] = []
     @Published private(set) var cards: [String: SRSState] = [:]
     @Published private(set) var log: [ReviewLogEntry] = []
     @Published private(set) var favorites: Set<String> = []
@@ -91,6 +92,7 @@ final class Store: ObservableObject {
         guard !bootstrapped else { return }
         bootstrapped = true
         words = Self.loadSeedWords()
+        grammarPoints = Self.loadGrammarPoints()
         loadState()
         ensureCards()
     }
@@ -104,6 +106,20 @@ final class Store: ObservableObject {
         } catch {
             #if DEBUG
             print("[JianRiJi] seed_words.json 解析失败：\(error)")
+            #endif
+            return []
+        }
+    }
+
+    private static func loadGrammarPoints() -> [GrammarPoint] {
+        let bundle = Bundle.main
+        guard let url = bundle.url(forResource: "grammar_points", withExtension: "json") else { return [] }
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        do {
+            return try JSONDecoder().decode([GrammarPoint].self, from: data)
+        } catch {
+            #if DEBUG
+            print("[JianRiJi] grammar_points.json 解析失败：\(error)")
             #endif
             return []
         }

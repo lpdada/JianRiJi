@@ -16,6 +16,7 @@ struct StudyHubView: View {
                 VStack(spacing: 16) {
                     todayCard
                     HeatmapView(log: store.log)
+                    grammarCard
                     modeGrid
                     note
                 }
@@ -67,6 +68,44 @@ struct StudyHubView: View {
                 .tint(Theme.accent)
         }
         .paperCard(padding: 16)
+    }
+
+    /// 语法学习入口：不新开底部 Tab（6 个 Tab 会挤进“更多”里），放在学习页最显眼的位置。
+    private var grammarCard: some View {
+        NavigationLink {
+            GrammarView()
+                .environmentObject(store)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "book")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Theme.indigo)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("语法学习")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.primary)
+                    Text("\(store.grammarPoints.count) 个分级语法点，N5–N1，按级别筛选可搜")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.muted)
+            }
+            .padding(14)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var modeGrid: some View {

@@ -171,6 +171,9 @@ struct WordDetailView: View {
                     if let example = word.example {
                         exampleCard(example)
                     }
+                    if let note = word.note, !note.isEmpty {
+                        noteCard(note)
+                    }
                     memoryCard
                     if let forms = conjugation {
                         conjugationCard(forms)
@@ -234,6 +237,18 @@ struct WordDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .paperCard(padding: 18)
+    }
+
+    private func noteCard(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("解析")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.indigo)
+            Text(note)
+                .font(.system(size: 17))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .paperCard(padding: 16)
     }
 
     private func exampleCard(_ example: String) -> some View {
