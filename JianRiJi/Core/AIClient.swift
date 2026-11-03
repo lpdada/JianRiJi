@@ -88,7 +88,7 @@ enum AIClient {
         guard let key = KeychainHelper.read(account: settings.aiVendor.rawValue) else {
             throw AIError.noKey
         }
-        guard let baseURLString = effectiveBaseURL(settings),
+        guard let baseURLString = effectiveBaseURL(settings: settings),
               let baseURL = URL(string: baseURLString) else {
             throw AIError.notConfigured("自定义厂商请先填接口地址。")
         }
