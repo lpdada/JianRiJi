@@ -42,6 +42,7 @@ struct StudyHubView: View {
         case .connect: LianliankaView()
         case .listen: SuishentingView()
         case .handwriting: HandwritingView()
+        case .classic: ClassicModeView()
         }
     }
 

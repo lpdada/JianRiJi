@@ -25,11 +25,16 @@ struct Word: Identifiable, Codable, Hashable {
     let variants: [String: String]?
     /// 精讲解析，可为空。同样不能给默认值，原因同上。
     let note: String?
+    /// 例句注音，可为空。两种形态都见过：
+    /// 分段式如「数学[すうがく]が 不得意[ふとくい]だ」，经典模式按段拆成 假名 / 词形 / romaji 三行；
+    /// 整句式如「がっこうはえきのちかくです。」（或精讲的例句假名），经典模式整句显示读音与 romaji。
+    let exampleFurigana: String?
 
     enum CodingKeys: String, CodingKey {
         case id, term, reading, romaji, meaning, jlpt, example, variants, note
         case partOfSpeech = "pos"
         case exampleZh = "example_zh"
+        case exampleFurigana = "example_furigana"
     }
 
     /// 详情页标题：有汉字表记时显示「表记（读音）」
@@ -51,6 +56,7 @@ extension Word {
         example: "海の向こうに灯台が見える。",
         exampleZh: "海的那头能看见灯塔。",
         variants: nil,
-        note: nil
+        note: nil,
+        exampleFurigana: nil
     )
 }
