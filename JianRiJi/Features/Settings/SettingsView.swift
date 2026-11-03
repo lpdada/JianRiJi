@@ -4,6 +4,9 @@ struct SettingsView: View {
     @EnvironmentObject private var store: Store
 
     @State private var showResetConfirm = false
+    @State private var keyDraft = ""
+    @State private var keyMessage = ""
+    @State private var testing = false
 
     private var version: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
@@ -68,6 +71,71 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("厂商", selection: $store.settings.aiVendor) {
+                        ForEach(AIVendor.allCases) { vendor in
+                            Text(vendor.displayName).tag(vendor)
+                        }
+                    }
+
+                    TextField(
+                        "模型（空 = \(store.settings.aiVendor.defaultModel.isEmpty ? "请填模型名" : store.settings.aiVendor.defaultModel)）",
+                        text: $store.settings.aiModel
+                    )
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+
+                    if store.settings.aiVendor == .custom {
+                        TextField("接口地址，如 https://api.example.com/v1", text: $store.settings.aiBaseURL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                    } else {
+                        row("接口地址", store.settings.aiVendor.defaultBaseURL ?? "")
+                    }
+
+                    row("API Key", AIClient.hasKey(settings: store.settings) ? "已保存" : "未设置")
+
+                    SecureField("粘贴 API Key（只进 Keychain）", text: $keyDraft)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+
+                    HStack(spacing: 12) {
+                        Button("保存 Key") {
+                            if KeychainHelper.save(keyDraft, account: store.settings.aiVendor.rawValue) {
+                                keyDraft = ""
+                                keyMessage = "已保存到 Keychain，换厂商就用对应厂商的 Key。"
+                            } else {
+                                keyMessage = "保存失败：Key 不能为空。"
+                            }
+                        }
+                        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        if AIClient.hasKey(settings: store.settings) {
+                            Button("删除 Key", role: .destructive) {
+                                KeychainHelper.delete(account: store.settings.aiVendor.rawValue)
+                                keyMessage = "已删除当前厂商的 Key。"
+                            }
+                        }
+                    }
+
+                    Button {
+                        testConnection()
+                    } label: {
+                        Label(testing ? "正在测试…" : "测试连接", systemImage: "bolt.fill")
+                    }
+                    .disabled(testing)
+
+                    if !keyMessage.isEmpty {
+                        Text(keyMessage)
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                    }
+                } header: {
+                    Text("AI")
+                } footer: {
+                    Text("Key 只存在本机 Keychain，不进学习存档、不上传到除选中厂商外的任何地方。AI 讲解在词条详情里用，点一次发一次请求，不用不发。Opencode Go 会额外带 x-opencode-client / session / request 三个头。")
+                }
+
+                Section {
                     row("词库词条", "\(store.totalCount)")
                     row("已掌握", "\(store.masteredCount)")
                     row("累计复习", "\(store.log.count) 次")
@@ -101,7 +169,7 @@ struct SettingsView: View {
                 } header: {
                     Text("关于")
                 } footer: {
-                    Text("简日记是独立实现，跟「识日」没有关系，也没有拷它的代码或词库。词表是手写的示例数据，你可以自己替换 Resources/seed_words.json。")
+                    Text("简日记是独立实现，跟「识日」没有关系，也没有拷它的代码或词库。词库与语法来源见 README 的「词库」一节。")
                 }
             }
             .scrollContentBackground(.hidden)
@@ -115,6 +183,30 @@ struct SettingsView: View {
                 Button("算了", role: .cancel) {}
             } message: {
                 Text("这个动作收不回来。")
+            }
+        }
+    }
+
+    private func testConnection() {
+        testing = true
+        keyMessage = ""
+        let settings = store.settings
+        Task {
+            do {
+                let reply = try await AIClient.chat(
+                    settings: settings,
+                    system: "你是一个简短的测试助手。",
+                    user: "只回一个字：好"
+                )
+                await MainActor.run {
+                    testing = false
+                    keyMessage = "连接成功，模型回了：\(reply)"
+                }
+            } catch {
+                await MainActor.run {
+                    testing = false
+                    keyMessage = "连接失败：\(error.localizedDescription)"
+                }
             }
         }
     }

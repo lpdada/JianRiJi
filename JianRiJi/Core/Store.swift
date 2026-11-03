@@ -14,9 +14,16 @@ struct AppSettings: Codable, Equatable {
     var speechRate: Double = 0.45
     /// 当前词本 id，`all` 为全部
     var deckFilter: String = Deck.allID
+    /// AI 厂商；Key 本身不放这里，存在 Keychain 里，按厂商分条目。
+    var aiVendor: AIVendor = .opencodeGo
+    /// AI 模型，空 = 用厂商默认值
+    var aiModel: String = ""
+    /// AI 接口地址，空 = 用厂商默认值；自定义厂商必须填
+    var aiBaseURL: String = ""
 
     enum CodingKeys: String, CodingKey {
         case dailyGoal, reviewLimit, showRomaji, autoSpeak, speechRate, deckFilter
+        case aiVendor, aiModel, aiBaseURL
     }
 
     init() {}
@@ -29,6 +36,9 @@ struct AppSettings: Codable, Equatable {
         autoSpeak = try c.decodeIfPresent(Bool.self, forKey: .autoSpeak) ?? false
         speechRate = try c.decodeIfPresent(Double.self, forKey: .speechRate) ?? 0.45
         deckFilter = try c.decodeIfPresent(String.self, forKey: .deckFilter) ?? Deck.allID
+        aiVendor = try c.decodeIfPresent(AIVendor.self, forKey: .aiVendor) ?? .opencodeGo
+        aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
+        aiBaseURL = try c.decodeIfPresent(String.self, forKey: .aiBaseURL) ?? ""
     }
 }
 

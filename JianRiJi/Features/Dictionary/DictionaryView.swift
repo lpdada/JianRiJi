@@ -349,8 +349,20 @@ struct WordDetailView: View {
         return formatter.localizedString(for: state.due, relativeTo: Date())
     }
 
+    @State private var showAIExplanation = false
+
     private var actions: some View {
         VStack(spacing: 10) {
+            Button {
+                showAIExplanation = true
+            } label: {
+                Label("AI 讲解", systemImage: "sparkles")
+            }
+            .buttonStyle(GhostButtonStyle(tint: Theme.indigo))
+            .sheet(isPresented: $showAIExplanation) {
+                AIExplanationView(word: word)
+            }
+
             Button {
                 store.grade(word: word, grade: .again)
                 dismiss()
