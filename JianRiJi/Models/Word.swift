@@ -20,7 +20,9 @@ struct Word: Identifiable, Codable, Hashable {
     /// 例句中文，可为空
     let exampleZh: String?
     /// 变形表等补充形式，可为空。旧 JSON 里没有这个键时解码为 nil，不影响已有词条。
-    let variants: [String: String]? = nil
+    /// 注意：这里不能给 = nil 默认值——带默认值的属性会被合成 Decodable 跳过，
+    /// JSON 里有 variants 也会解成 nil（CI 单测已实证）。Optional 本身缺键就是 nil。
+    let variants: [String: String]?
 
     enum CodingKeys: String, CodingKey {
         case id, term, reading, romaji, meaning, jlpt, example, variants
@@ -45,6 +47,7 @@ extension Word {
         partOfSpeech: "名词",
         jlpt: "N3",
         example: "海の向こうに灯台が見える。",
-        exampleZh: "海的那头能看见灯塔。"
+        exampleZh: "海的那头能看见灯塔。",
+        variants: nil
     )
 }
