@@ -155,6 +155,7 @@ struct StudyHubView: View {
         case .connect: return Theme.jade
         case .listen: return Color(red: 0.36, green: 0.42, blue: 0.70)
         case .handwriting: return Color(red: 0.20, green: 0.55, blue: 0.45)
+        case .classic: return Color(red: 0.10, green: 0.42, blue: 0.38)
         }
     }
 
