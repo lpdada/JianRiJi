@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 语法学习：270 个分级语法点，按级别筛选、可搜标题 / 意义 / 接续 / 标签。
-/// 点一条进详情：接续、意义、例句（日文 + 假名 + 中文）、备注。
+/// 语法学习：270 个分级语法点，按级别筛选、可搜句型 / 意义 / 接续 / 备注 / 例句读音 / 标签。
+/// 点一条进详情：接续、意义、例句（日文 + 假名 + 中文）、备注，全部可朗读，可标记为学会。
 struct GrammarView: View {
     @EnvironmentObject private var store: Store
 
@@ -16,16 +16,11 @@ struct GrammarView: View {
     }
 
     private var results: [GrammarPoint] {
-        store.grammarPoints.filter { point in
-            let levelOK = level == "全部" || point.level == level
-            guard levelOK else { return false }
-            guard !trimmedQuery.isEmpty else { return true }
-            let haystack = [point.title, point.meaning, point.connection, point.tag, point.example]
-                .compactMap { $0 }
-                .joined(separator: " ")
-            return haystack.contains(trimmedQuery)
-        }
+        store.grammarSearch(trimmedQuery, level: level)
     }
+
+    private var learnedCount: Int { store.learnedGrammarCount(forLevel: level) }
+    private var totalCount: Int { store.grammarPoints(forLevel: level).count }
 
     var body: some View {
         ScrollView {
@@ -39,7 +34,7 @@ struct GrammarView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Text("共 \(results.count) 个")
+                Text("已学 \(learnedCount) / 共 \(totalCount) 个")
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
 
@@ -109,6 +104,11 @@ struct GrammarView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.primary)
                     Spacer()
+                    if store.isGrammarLearned(point) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.jade)
+                    }
                     Pill(text: point.level, tint: Theme.accent)
                 }
                 if let meaning = point.meaning {
@@ -132,8 +132,15 @@ struct GrammarView: View {
 
 struct GrammarDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: Store
 
     let point: GrammarPoint
+
+    private var learned: Bool { store.isGrammarLearned(point) }
+
+    private func speak(_ text: String) {
+        Speech.shared.speak(text, rate: store.settings.speechRate)
+    }
 
     var body: some View {
         NavigationStack {
@@ -141,17 +148,20 @@ struct GrammarDetailView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     header
                     if let connection = point.connection, !connection.isEmpty {
-                        section(title: "接续", body: connection)
+                        section(title: "接续", body: connection) { speak(connection) }
                     }
                     if let meaning = point.meaning, !meaning.isEmpty {
-                        section(title: "意义", body: meaning)
+                        section(title: "意义", body: meaning) { speak(meaning) }
                     }
-                    if let example = point.example, !example.isEmpty {
+                    if let examples = point.examples, !examples.isEmpty {
+                        examplesCard(examples)
+                    } else if let example = point.example, !example.isEmpty {
                         exampleCard(example)
                     }
                     if let note = point.note, !note.isEmpty {
-                        section(title: "备注", body: note)
+                        section(title: "备注", body: note) { speak(note) }
                     }
+                    learnButton
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -169,9 +179,20 @@ struct GrammarDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(point.title)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(Theme.accent)
+            HStack(alignment: .top, spacing: 10) {
+                Text(point.title)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.accent)
+                Spacer()
+                Button {
+                    speak(point.title)
+                } label: {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 17))
+                        .foregroundStyle(Theme.indigo)
+                }
+                .buttonStyle(.plain)
+            }
             HStack(spacing: 6) {
                 Pill(text: point.level, tint: Theme.accent)
                 if let tag = point.tag {
@@ -183,11 +204,20 @@ struct GrammarDetailView: View {
         .paperCard(padding: 18)
     }
 
-    private func section(title: String, body: String) -> some View {
+    private func section(title: String, body: String, speakAction: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.indigo)
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.indigo)
+                Spacer()
+                Button(action: speakAction) {
+                    Label("朗读", systemImage: "speaker.wave.2.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.indigo)
+                }
+                .buttonStyle(.plain)
+            }
             Text(body)
                 .font(.system(size: 17))
         }
@@ -197,9 +227,20 @@ struct GrammarDetailView: View {
 
     private func exampleCard(_ example: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("例句")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.indigo)
+            HStack(spacing: 8) {
+                Text("例句")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.indigo)
+                Spacer()
+                Button {
+                    speak(example)
+                } label: {
+                    Label("朗读", systemImage: "speaker.wave.2.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.indigo)
+                }
+                .buttonStyle(.plain)
+            }
             Text(example)
                 .font(.system(size: 17))
             if let reading = point.exampleReading, !reading.isEmpty {
@@ -215,5 +256,44 @@ struct GrammarDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .paperCard(padding: 16)
+    }
+
+    private func examplesCard(_ examples: [GrammarExample]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("例句")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.indigo)
+            ForEach(Array(examples.enumerated()), id: \.offset) { _, example in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(example.ja)
+                            .font(.system(size: 17))
+                        Spacer()
+                        Button {
+                            speak(example.ja)
+                        } label: {
+                            Label("朗读", systemImage: "speaker.wave.2.fill")
+                                .font(.caption)
+                                .foregroundStyle(Theme.indigo)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text(example.zh)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .paperCard(padding: 16)
+    }
+
+    private var learnButton: some View {
+        Button {
+            store.markGrammarLearned(point)
+        } label: {
+            Text(learned ? "已标记为学会" : "标记为学会")
+        }
+        .buttonStyle(PrimaryButtonStyle(fill: learned ? Theme.jade : Theme.accent))
     }
 }

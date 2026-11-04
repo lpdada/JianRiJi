@@ -22,10 +22,27 @@ struct GrammarPoint: Identifiable, Codable, Hashable {
     let note: String?
     /// 标签：判断句 / 逆接 / 原因 ……
     let tag: String?
+    /// 多条例句。现有 270 条数据没有这个键，解码为 nil；
+    /// 有这个键时详情页会把多条全列出来，不会只取第一条。
+    /// 同样不能给默认值，原因同 Word.note。
+    let examples: [GrammarExample]?
 
     enum CodingKeys: String, CodingKey {
-        case id, level, title, connection, meaning, example, note, tag
+        case id, level, title, connection, meaning, example, note, tag, examples
         case exampleReading = "exampleReading"
         case exampleZh = "exampleZh"
     }
+
+    /// 搜索命中：句型、意义、接续、备注、例句读音、标签、例句。
+    func matches(query: String) -> Bool {
+        let q = query.lowercased()
+        let fields: [String?] = [title as String?, meaning, connection, note, exampleReading, tag, example]
+        return fields.compactMap { $0 }.contains { $0.lowercased().contains(q) }
+    }
+}
+
+/// 一条例句（日文 + 中文），供 GrammarPoint.examples 用。
+struct GrammarExample: Codable, Hashable {
+    let ja: String
+    let zh: String
 }

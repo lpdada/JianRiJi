@@ -29,9 +29,14 @@ struct Word: Identifiable, Codable, Hashable {
     /// 分段式如「数学[すうがく]が 不得意[ふとくい]だ」，经典模式按段拆成 假名 / 词形 / romaji 三行；
     /// 整句式如「がっこうはえきのちかくです。」（或精讲的例句假名），经典模式整句显示读音与 romaji。
     let exampleFurigana: String?
+    /// 所属词书，如「初级上」；缺省时按 JLPT 兜底，见 resolvedBook。
+    /// 同样不能给默认值，原因同 note。
+    let book: String?
+    /// 标签，如「日常」，用于日常高频一类词书。同样不能给默认值。
+    let tags: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case id, term, reading, romaji, meaning, jlpt, example, variants, note
+        case id, term, reading, romaji, meaning, jlpt, example, variants, note, book, tags
         case partOfSpeech = "pos"
         case exampleZh = "example_zh"
         case exampleFurigana = "example_furigana"
@@ -40,6 +45,18 @@ struct Word: Identifiable, Codable, Hashable {
     /// 详情页标题：有汉字表记时显示「表记（读音）」
     var displayTitle: String {
         term == reading ? term : "\(term)（\(reading)）"
+    }
+
+    /// 没写 book 的旧数据按 JLPT 归到对应词书，保证每本词书都有内容。
+    /// 注意：这里返回的是 books.json 里 book 类词书的 filterValue，不是书名。
+    var resolvedBook: String {
+        if let book, !book.isEmpty { return book }
+        switch jlpt {
+        case "N5": return "初级上"
+        case "N4": return "初级下"
+        case "N3": return "中级"
+        default: return "高级"
+        }
     }
 }
 
@@ -57,6 +74,8 @@ extension Word {
         exampleZh: "海的那头能看见灯塔。",
         variants: nil,
         note: nil,
-        exampleFurigana: nil
+        exampleFurigana: nil,
+        book: nil,
+        tags: nil
     )
 }

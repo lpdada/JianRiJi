@@ -12,8 +12,9 @@ struct AppSettings: Codable, Equatable {
     var autoSpeak: Bool = false
     /// 朗读速度，0.3 ~ 0.6
     var speechRate: Double = 0.45
-    /// 当前词本 id，`all` 为全部
-    var deckFilter: String = Deck.allID
+    /// 当前词书 id（books.json 的 id），`all` 为全部。
+    /// 旧存档里可能是 JLPT 级别（如 N5），启动时匹配不到词书会归到全部。
+    var deckFilter: String = WordBook.allID
     /// AI 厂商；Key 本身不放这里，存在 Keychain 里，按厂商分条目。
     var aiVendor: AIVendor = .opencodeGo
     /// AI 模型，空 = 用厂商默认值
@@ -35,7 +36,7 @@ struct AppSettings: Codable, Equatable {
         showRomaji = try c.decodeIfPresent(Bool.self, forKey: .showRomaji) ?? true
         autoSpeak = try c.decodeIfPresent(Bool.self, forKey: .autoSpeak) ?? false
         speechRate = try c.decodeIfPresent(Double.self, forKey: .speechRate) ?? 0.45
-        deckFilter = try c.decodeIfPresent(String.self, forKey: .deckFilter) ?? Deck.allID
+        deckFilter = try c.decodeIfPresent(String.self, forKey: .deckFilter) ?? WordBook.allID
         aiVendor = try c.decodeIfPresent(AIVendor.self, forKey: .aiVendor) ?? .opencodeGo
         aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
         aiBaseURL = try c.decodeIfPresent(String.self, forKey: .aiBaseURL) ?? ""
@@ -66,8 +67,9 @@ private struct PersistedState: Codable {
     var settings: AppSettings = AppSettings()
     var log: [ReviewLogEntry] = []
     var favorites: [String] = []
+    var learnedGrammar: [String] = []
 
-    enum CodingKeys: String, CodingKey { case cards, settings, log, favorites }
+    enum CodingKeys: String, CodingKey { case cards, settings, log, favorites, learnedGrammar }
 
     init() {}
 
@@ -77,6 +79,7 @@ private struct PersistedState: Codable {
         settings = try c.decodeIfPresent(AppSettings.self, forKey: .settings) ?? AppSettings()
         log = try c.decodeIfPresent([ReviewLogEntry].self, forKey: .log) ?? []
         favorites = try c.decodeIfPresent([String].self, forKey: .favorites) ?? []
+        learnedGrammar = try c.decodeIfPresent([String].self, forKey: .learnedGrammar) ?? []
     }
 }
 
@@ -84,6 +87,8 @@ private struct PersistedState: Codable {
 final class Store: ObservableObject {
     @Published private(set) var words: [Word] = []
     @Published private(set) var grammarPoints: [GrammarPoint] = []
+    @Published private(set) var allBooks: [WordBook] = []
+    @Published private(set) var learnedGrammar: Set<String> = []
     @Published private(set) var cards: [String: SRSState] = [:]
     @Published private(set) var log: [ReviewLogEntry] = []
     @Published private(set) var favorites: Set<String> = []
@@ -103,8 +108,18 @@ final class Store: ObservableObject {
         bootstrapped = true
         words = Self.loadSeedWords()
         grammarPoints = Self.loadGrammarPoints()
+        allBooks = Self.loadBooks()
         loadState()
+        normalizeBook()
         ensureCards()
+    }
+
+    /// 旧存档的 deckFilter 可能是 JLPT 级别（如 N5），现在它是词书 id；
+    /// 匹配不到任何词书时回到全部词本，并把修正后的值写回去。
+    private func normalizeBook() {
+        if allBooks.first(where: { $0.id == settings.deckFilter }) == nil {
+            settings.deckFilter = WordBook.allID
+        }
     }
 
     private static func loadSeedWords() -> [Word] {
@@ -130,6 +145,20 @@ final class Store: ObservableObject {
         } catch {
             #if DEBUG
             print("[JianRiJi] grammar_points.json 解析失败：\(error)")
+            #endif
+            return []
+        }
+    }
+
+    private static func loadBooks() -> [WordBook] {
+        let bundle = Bundle.main
+        guard let url = bundle.url(forResource: "books", withExtension: "json") else { return [] }
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        do {
+            return try JSONDecoder().decode([WordBook].self, from: data)
+        } catch {
+            #if DEBUG
+            print("[JianRiJi] books.json 解析失败：\(error)")
             #endif
             return []
         }
@@ -161,6 +190,7 @@ final class Store: ObservableObject {
         settings = snapshot.settings
         log = snapshot.log
         favorites = Set(snapshot.favorites)
+        learnedGrammar = Set(snapshot.learnedGrammar)
     }
 
     private func schedulePersist() {
@@ -178,6 +208,7 @@ final class Store: ObservableObject {
         snapshot.settings = settings
         snapshot.log = log
         snapshot.favorites = Array(favorites)
+        snapshot.learnedGrammar = Array(learnedGrammar)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(snapshot) else { return }
@@ -188,47 +219,93 @@ final class Store: ObservableObject {
 
     var totalCount: Int { words.count }
 
-    // MARK: - 词本
+    // MARK: - 词书
 
-    /// 当前词本范围内的词。
+    /// 当前词书范围内的词。切换词书后这里立刻变，复习队列跟着变，不用重开页面。
     var scopedWords: [Word] {
-        let id = settings.deckFilter
-        return id == Deck.allID ? words : words.filter { $0.jlpt == id }
+        words(in: currentBook)
     }
 
-    var decks: [Deck] {
-        let levels = ["N5", "N4", "N3", "N2", "N1"]
-        let subtitles: [String: String] = [
-            "N5": "入门核心词汇",
-            "N4": "基础进阶词汇",
-            "N3": "中级词汇",
-            "N2": "高级词汇",
-            "N1": "精通词汇"
-        ]
-        var result: [Deck] = [
-            Deck(id: Deck.allID, title: "全部词本", subtitle: "N5 → N3 全部词条", badge: "全", words: words)
-        ]
-        for level in levels {
-            let subset = words.filter { $0.jlpt == level }
-            guard !subset.isEmpty else { continue }
-            result.append(Deck(
-                id: level,
-                title: "JLPT \(level)",
-                subtitle: subtitles[level] ?? "",
-                badge: level,
-                words: subset
-            ))
+    var books: [WordBook] { allBooks }
+
+    var currentBook: WordBook {
+        allBooks.first { $0.id == settings.deckFilter } ?? allBooks.first ?? fallbackBook
+    }
+
+    var currentBookTitle: String { currentBook.title }
+
+    func words(in book: WordBook) -> [Word] {
+        switch book.filterType {
+        case "learned":
+            return words.filter { word in
+                guard let state = cards[word.id] else { return false }
+                return !state.isNew
+            }
+        case "favorite":
+            return words.filter { favorites.contains($0.id) }
+        default:
+            return words.filter { book.matches($0) }
         }
-        return result
     }
 
-    var currentDeckTitle: String {
-        decks.first { $0.id == settings.deckFilter }?.title ?? "全部词本"
+    func wordCount(in book: WordBook) -> Int {
+        words(in: book).count
     }
 
-    func selectDeck(_ deck: Deck) {
-        settings.deckFilter = deck.id
+    /// 这本词书里已经开始的词（不是新词）有多少。
+    func learnedCount(in book: WordBook) -> Int {
+        words(in: book).filter { word in
+            guard let state = cards[word.id] else { return false }
+            return !state.isNew
+        }.count
+    }
+
+    func selectBook(_ book: WordBook) {
+        settings.deckFilter = book.id
         objectWillChange.send()
+    }
+
+    /// books.json 读不到时的保底：只有全部词本。
+    private var fallbackBook: WordBook {
+        WordBook(
+            id: WordBook.allID,
+            title: "全部词本",
+            badge: "全",
+            categories: ["常用词单"],
+            author: "简日记",
+            note: "全部词条",
+            filterType: "all",
+            filterValue: nil,
+            tint: 0
+        )
+    }
+
+    // MARK: - 语法
+
+    func grammarPoints(forLevel level: String) -> [GrammarPoint] {
+        level == "全部" ? grammarPoints : grammarPoints.filter { $0.level == level }
+    }
+
+    func grammarSearch(_ query: String, level: String) -> [GrammarPoint] {
+        let base = grammarPoints(forLevel: level)
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return base }
+        return base.filter { $0.matches(query: q) }
+    }
+
+    func isGrammarLearned(_ point: GrammarPoint) -> Bool {
+        learnedGrammar.contains(point.id)
+    }
+
+    /// 重复点也不会重复计数：学会状态存在 Set 里。
+    func markGrammarLearned(_ point: GrammarPoint) {
+        guard !learnedGrammar.contains(point.id) else { return }
+        learnedGrammar.insert(point.id)
+        persist()
+    }
+
+    func learnedGrammarCount(forLevel level: String) -> Int {
+        grammarPoints(forLevel: level).filter { learnedGrammar.contains($0.id) }.count
     }
 
     /// 到期且不是新词的卡片，按到期时间排。

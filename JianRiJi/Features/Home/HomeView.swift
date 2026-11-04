@@ -4,21 +4,30 @@ struct HomeView: View {
     @EnvironmentObject private var store: Store
 
     @State private var query = ""
+    @State private var category = "全部"
     @State private var showDictation = false
     @State private var showReview = false
+
+    private let categories = ["全部", "常用词单", "考试词单", "生活实用", "日常高频", "已学词单"]
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var visibleDecks: [Deck] {
-        guard !trimmedQuery.isEmpty else { return store.decks }
-        return store.decks.filter {
-            $0.title.localizedCaseInsensitiveContains(trimmedQuery)
-                || $0.subtitle.localizedCaseInsensitiveContains(trimmedQuery)
-                || $0.badge.localizedCaseInsensitiveContains(trimmedQuery)
+    private var visibleBooks: [WordBook] {
+        store.books.filter { book in
+            let inCategory = category == "全部" || book.categories.contains(category)
+            guard inCategory else { return false }
+            guard !trimmedQuery.isEmpty else { return true }
+            return book.title.localizedCaseInsensitiveContains(trimmedQuery)
+                || book.note.localizedCaseInsensitiveContains(trimmedQuery)
+                || book.badge.localizedCaseInsensitiveContains(trimmedQuery)
         }
     }
+
+    private var currentBook: WordBook { store.currentBook }
+    private var currentBookCount: Int { store.wordCount(in: currentBook) }
+    private var currentBookEmpty: Bool { currentBookCount == 0 }
 
     var body: some View {
         NavigationStack {
@@ -26,7 +35,8 @@ struct HomeView: View {
                 VStack(spacing: 14) {
                     todayStrip
                     searchBar
-                    deckList
+                    categoryChips
+                    bookList
                     footer
                 }
                 .padding(.horizontal, 16)
@@ -58,39 +68,49 @@ struct HomeView: View {
     // MARK: - 今日
 
     private var todayStrip: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RingProgress(value: store.todayProgress, lineWidth: 7)
-                Text("\(Int(store.todayProgress * 100))%")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Theme.accent)
-            }
-            .frame(width: 52, height: 52)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RingProgress(value: store.todayProgress, lineWidth: 7)
+                    Text("\(Int(store.todayProgress * 100))%")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.accent)
+                }
+                .frame(width: 52, height: 52)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(store.currentDeckTitle) · 今天")
-                    .font(.subheadline.weight(.semibold))
-                HStack(spacing: 10) {
-                    stat("待复习", "\(store.remainingDueCount)")
-                    stat("新词", "\(min(store.newAllowance, store.freshWords.count))")
-                    if store.streak > 0 {
-                        stat("连击", "\(store.streak)")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(store.currentBookTitle) · 今天")
+                        .font(.subheadline.weight(.semibold))
+                    HStack(spacing: 10) {
+                        stat("待复习", "\(store.remainingDueCount)")
+                        stat("新词", "\(min(store.newAllowance, store.freshWords.count))")
+                        if store.streak > 0 {
+                            stat("连击", "\(store.streak)")
+                        }
                     }
                 }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    showReview = true
+                } label: {
+                    Image(systemName: "play.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.accent, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(currentBookEmpty)
+                .opacity(currentBookEmpty ? 0.4 : 1)
             }
 
-            Spacer(minLength: 0)
-
-            Button {
-                showReview = true
-            } label: {
-                Image(systemName: "play.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(Theme.accent, in: Circle())
+            if currentBookEmpty {
+                Text("这本词书还没有词，换一本词书，或者用导入工具加词。")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
             }
-            .buttonStyle(.plain)
         }
         .paperCard(padding: 14)
     }
@@ -106,7 +126,7 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - 搜索
+    // MARK: - 搜索与分类
 
     private var searchBar: some View {
         HStack(spacing: 8) {
@@ -135,12 +155,35 @@ struct HomeView: View {
         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
     }
 
-    // MARK: - 词本
+    private var categoryChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories, id: \.self) { item in
+                    Button {
+                        category = item
+                    } label: {
+                        Text(item)
+                            .font(.footnote.weight(category == item ? .semibold : .regular))
+                            .foregroundStyle(category == item ? .white : Theme.muted)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                category == item ? Theme.accent : Theme.card,
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
 
-    private var deckList: some View {
+    // MARK: - 词书
+
+    private var bookList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 16) {
-                Text("全部词本")
+                Text("词书")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.accent)
                 Spacer()
@@ -152,12 +195,12 @@ struct HomeView: View {
                 .fill(Theme.hairline.opacity(0.5))
                 .frame(height: 0.6)
 
-            if visibleDecks.isEmpty {
-                EmptyHint(icon: "books.vertical", title: "没有匹配的词本", detail: "换个关键词，或者清空搜索。")
+            if visibleBooks.isEmpty {
+                EmptyHint(icon: "books.vertical", title: "没有匹配的词书", detail: "换个分类或关键词，或者清空搜索。")
             } else {
-                ForEach(Array(visibleDecks.enumerated()), id: \.element.id) { offset, deck in
-                    deckRow(deck, tint: Theme.deckTints[offset % Theme.deckTints.count])
-                    if offset != visibleDecks.count - 1 {
+                ForEach(Array(visibleBooks.enumerated()), id: \.element.id) { offset, book in
+                    bookRow(book, tint: Theme.deckTints[offset % Theme.deckTints.count])
+                    if offset != visibleBooks.count - 1 {
                         Rectangle()
                             .fill(Theme.hairline.opacity(0.4))
                             .frame(height: 0.6)
@@ -169,22 +212,27 @@ struct HomeView: View {
         .padding(.vertical, 10)
     }
 
-    private func deckRow(_ deck: Deck, tint: Color) -> some View {
-        Button {
-            store.selectDeck(deck)
+    private func bookRow(_ book: WordBook, tint: Color) -> some View {
+        let count = store.wordCount(in: book)
+        let learned = store.learnedCount(in: book)
+        let isCurrent = book.id == store.currentBook.id
+
+        return Button {
+            store.selectBook(book)
             showReview = true
         } label: {
             HStack(spacing: 14) {
-                cover(deck, tint: tint)
+                cover(book, tint: tint)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(deck.title)
+                    Text(book.title)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.primary)
-                    Text(deck.subtitle)
+                    Text(book.note)
                         .font(.footnote)
                         .foregroundStyle(Theme.muted)
-                    Text("共 \(deck.count) 词")
+                        .lineLimit(2)
+                    Text("共 \(count) 词 · 已学 \(learned) 词")
                         .font(.footnote)
                         .foregroundStyle(Theme.muted)
                         .padding(.top, 2)
@@ -192,28 +240,46 @@ struct HomeView: View {
 
                 Spacer(minLength: 6)
 
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.muted.opacity(0.6))
+                if isCurrent {
+                    Text("学习中")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Theme.mint, in: Capsule())
+                } else if count == 0 {
+                    Text("暂无词")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.muted.opacity(0.7))
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.muted.opacity(0.6))
+                }
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(count == 0)
+        .opacity(count == 0 && !isCurrent ? 0.55 : 1)
     }
 
-    private func cover(_ deck: Deck, tint: Color) -> some View {
+    private func cover(_ book: WordBook, tint: Color) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(tint.opacity(0.16))
             VStack(spacing: 2) {
-                Text(deck.badge)
-                    .font(.system(size: deck.isAll ? 15 : 15, weight: .bold, design: .rounded))
+                Text(book.badge)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(tint)
-                Text(deck.isAll ? "ALL" : "JLPT")
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                Text(book.isAll ? "ALL" : "BOOK")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(tint.opacity(0.75))
             }
+            .padding(2)
         }
         .frame(width: 54, height: 68)
         .overlay(
@@ -227,7 +293,7 @@ struct HomeView: View {
             Text("一天二十张，比一口气两百张有用。")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
-            Text("简日记 v0.2.0 · MIT")
+            Text("简日记 v0.4.0 · MIT")
                 .font(.caption2)
                 .foregroundStyle(Theme.muted.opacity(0.7))
         }

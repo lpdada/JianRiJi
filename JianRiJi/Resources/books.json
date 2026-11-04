@@ -1,0 +1,173 @@
+[
+  {
+    "author": "简日记",
+    "badge": "全",
+    "categories": [
+      "常用词单"
+    ],
+    "filterType": "all",
+    "filterValue": null,
+    "id": "all",
+    "note": "词库里的全部词条",
+    "tint": 0,
+    "title": "全部词本"
+  },
+  {
+    "author": "简日记",
+    "badge": "初上",
+    "categories": [
+      "常用词单"
+    ],
+    "filterType": "book",
+    "filterValue": "初级上",
+    "id": "chuji-shang",
+    "note": "没有词书信息的词按级别归入：N5 归到这里",
+    "tint": 1,
+    "title": "初级上"
+  },
+  {
+    "author": "简日记",
+    "badge": "初下",
+    "categories": [
+      "常用词单"
+    ],
+    "filterType": "book",
+    "filterValue": "初级下",
+    "id": "chuji-xia",
+    "note": "没有词书信息的词按级别归入：N4 归到这里",
+    "tint": 2,
+    "title": "初级下"
+  },
+  {
+    "author": "简日记",
+    "badge": "中级",
+    "categories": [
+      "常用词单"
+    ],
+    "filterType": "book",
+    "filterValue": "中级",
+    "id": "chuji-zhong",
+    "note": "没有词书信息的词按级别归入：N3 归到这里",
+    "tint": 3,
+    "title": "中级"
+  },
+  {
+    "author": "简日记",
+    "badge": "高级",
+    "categories": [
+      "常用词单"
+    ],
+    "filterType": "book",
+    "filterValue": "高级",
+    "id": "gaoji",
+    "note": "没有词书信息的词按级别归入：N2、N1 归到这里",
+    "tint": 1,
+    "title": "高级"
+  },
+  {
+    "author": "简日记",
+    "badge": "N5",
+    "categories": [
+      "考试词单"
+    ],
+    "filterType": "jlpt",
+    "filterValue": "N5",
+    "id": "jlpt-n5",
+    "note": "入门级核心词",
+    "tint": 2,
+    "title": "JLPT N5 词汇"
+  },
+  {
+    "author": "简日记",
+    "badge": "N4",
+    "categories": [
+      "考试词单"
+    ],
+    "filterType": "jlpt",
+    "filterValue": "N4",
+    "id": "jlpt-n4",
+    "note": "基础进阶词",
+    "tint": 3,
+    "title": "JLPT N4 词汇"
+  },
+  {
+    "author": "简日记",
+    "badge": "N3",
+    "categories": [
+      "考试词单"
+    ],
+    "filterType": "jlpt",
+    "filterValue": "N3",
+    "id": "jlpt-n3",
+    "note": "中级词",
+    "tint": 1,
+    "title": "JLPT N3 词汇"
+  },
+  {
+    "author": "简日记",
+    "badge": "N2",
+    "categories": [
+      "考试词单"
+    ],
+    "filterType": "jlpt",
+    "filterValue": "N2",
+    "id": "jlpt-n2",
+    "note": "高级词",
+    "tint": 2,
+    "title": "JLPT N2 词汇"
+  },
+  {
+    "author": "简日记",
+    "badge": "N1",
+    "categories": [
+      "考试词单"
+    ],
+    "filterType": "jlpt",
+    "filterValue": "N1",
+    "id": "jlpt-n1",
+    "note": "精通词",
+    "tint": 3,
+    "title": "JLPT N1 词汇"
+  },
+  {
+    "author": "简日记",
+    "badge": "日常",
+    "categories": [
+      "日常高频",
+      "生活实用"
+    ],
+    "filterType": "tag",
+    "filterValue": "日常",
+    "id": "daily",
+    "note": "带「日常」标签的词；现有词库没有标签，靠导入工具的 tags 列补充",
+    "tint": 0,
+    "title": "日常高频"
+  },
+  {
+    "author": "简日记",
+    "badge": "已学",
+    "categories": [
+      "已学词单"
+    ],
+    "filterType": "learned",
+    "filterValue": null,
+    "id": "learned",
+    "note": "已经开始学的词，按复习节奏走",
+    "tint": 2,
+    "title": "已学词单"
+  },
+  {
+    "author": "简日记",
+    "badge": "生词",
+    "categories": [
+      "已学词单",
+      "生活实用"
+    ],
+    "filterType": "favorite",
+    "filterValue": null,
+    "id": "fav",
+    "note": "星标收藏的词都在这儿",
+    "tint": 1,
+    "title": "我的生词"
+  }
+]

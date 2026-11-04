@@ -17,7 +17,9 @@ final class ConjugationTests: XCTestCase {
             exampleZh: nil,
             variants: nil,
             note: nil,
-            exampleFurigana: nil
+            exampleFurigana: nil,
+            book: nil,
+            tags: nil
         )
     }
 

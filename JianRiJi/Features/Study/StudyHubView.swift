@@ -49,7 +49,7 @@ struct StudyHubView: View {
     private var todayCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(store.currentDeckTitle)
+                Text(store.currentBookTitle)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text("今日 \(store.reviewedToday) 张")

@@ -90,7 +90,7 @@ struct ClassicModeView: View {
             stopWash()
         }
         .sheet(isPresented: $showList) {
-            QueueListView(queue: queue, currentIndex: index, title: store.currentDeckTitle)
+            QueueListView(queue: queue, currentIndex: index, title: store.currentBookTitle)
         }
         .sheet(isPresented: $showDetail) {
             if let word = current {

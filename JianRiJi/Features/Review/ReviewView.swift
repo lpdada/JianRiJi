@@ -47,7 +47,7 @@ struct ReviewView: View {
                     finishView
                 }
             }
-            .navigationTitle(store.currentDeckTitle)
+            .navigationTitle(store.currentBookTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -78,7 +78,7 @@ struct ReviewView: View {
             if phase == .idle { start() }
         }
         .sheet(isPresented: $showList) {
-            QueueListView(queue: queue, currentIndex: index, title: store.currentDeckTitle)
+            QueueListView(queue: queue, currentIndex: index, title: store.currentBookTitle)
         }
     }
 
