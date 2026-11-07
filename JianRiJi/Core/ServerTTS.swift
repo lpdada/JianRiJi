@@ -64,6 +64,9 @@ final class ServerTTS {
         var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         guard !trimmed.isEmpty else { return nil }
+        // 只有协议、没有 host 的输入（如 "https://" 去掉斜杠后剩 "https:"）不能当地址：
+        // 不拦的话下一步会把它当裸 host 补成 "https://https:/tts"。
+        guard !trimmed.hasSuffix(":") else { return nil }
         // 没写协议的裸地址最常见是手误，默认补 https 而不是直接报错。
         if !trimmed.contains("://") { trimmed = "https://" + trimmed }
         if !trimmed.lowercased().hasSuffix("/tts") { trimmed += "/tts" }
