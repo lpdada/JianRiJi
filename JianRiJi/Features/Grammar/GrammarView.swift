@@ -274,7 +274,7 @@ struct GrammarDetailView: View {
             HStack(spacing: 6) {
                 Pill(text: grammar.level, tint: AppTheme.primary)
                 if !grammar.noteTag.isEmpty {
-                    Pill(text: grammar.noteTag, tint: AppTheme.indigo)
+                    Pill(text: grammar.noteTag, tint: Theme.indigo)
                 }
             }
         }
@@ -517,7 +517,6 @@ struct RoundedCorner: Shape {
     func path(in rect: CGRect) -> Path {
         Path(UIBezierPath(roundedRect: rect,
                           byRoundingCorners: corners,
-                          cornerRadii: CGSize(width: radius, height: radius),
-                          in: nil).cgPath)
+                          cornerRadii: CGSize(width: radius, height: radius)).cgPath)
     }
 }
