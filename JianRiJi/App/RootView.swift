@@ -26,6 +26,7 @@ enum BooksDestination: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var store: Store
+    @StateObject private var brainwash = BrainwashStore()
     @State private var selection: RootTab = .home
     @State private var homePath = NavigationPath()
     @State private var booksPath = NavigationPath()
@@ -67,8 +68,7 @@ struct RootView: View {
                     onStartStudy: { _ in booksPath.append(BooksDestination.studyClassic) }
                 )
                 .navigationDestination(for: BooksDestination.self) { _ in
-                    // 第四步切到新词卡 WordStudyPageView；本步先保持旧经典模式。
-                    ClassicModeView()
+                    WordStudyPageView()
                 }
             }
             .tabItem { Label("词本", systemImage: "books.vertical.fill") }
@@ -80,6 +80,7 @@ struct RootView: View {
                 .tag(RootTab.settings)
         }
         .tint(AppTheme.primary)
+        .environmentObject(brainwash)
         .task {
             store.bootstrap()
         }
@@ -89,8 +90,7 @@ struct RootView: View {
     private func homeDestinationView(_ destination: HomeDestination) -> some View {
         switch destination {
         case .studyClassic:
-            // 第四步切到新词卡 WordStudyPageView；本步先保持旧经典模式。
-            ClassicModeView()
+            WordStudyPageView()
         case .grammar: GrammarView()
         case .dictionary: DictionaryView()
         case .favorites: DictionaryView(initialScope: .favorites)

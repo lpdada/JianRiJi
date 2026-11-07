@@ -5,13 +5,17 @@ import Foundation
 ///
 /// `audioKey` 指向 `VoicePack` 里的真人音频（`w-<词条id>` 之类）；
 /// 有音频就播音频，没有才走服务器合成 / TTS。
+/// `rate` 只在需要逐行变速时填（如洗脑：词一个速度、例句另一个速度）；
+/// 为 nil 时用循环本身的 rate。
 struct SpeechLine: Hashable {
     let text: String
     let audioKey: String?
+    let rate: Double?
 
-    init(_ text: String, audioKey: String? = nil) {
+    init(_ text: String, audioKey: String? = nil, rate: Double? = nil) {
         self.text = text
         self.audioKey = audioKey
+        self.rate = rate
     }
 }
 
@@ -152,23 +156,25 @@ final class SpeechLoop: NSObject, ObservableObject {
     }
 
     /// 读一条：有真人音频先播音频，没有走服务器合成，都没有才按句读切段走 TTS。
+    /// 本行自带 rate 时用本行的，否则用循环的 rate。
     private func speakOnce(_ line: SpeechLine) async {
+        let effectiveRate = line.rate ?? rate
         if let audioKey = line.audioKey, let url = VoicePack.url(for: audioKey) {
-            if await playLocal(url) { return }
+            if await playLocal(url, rate: effectiveRate) { return }
             // 文件损坏：继续往下走，不拿文件名当朗读内容。
         }
         let trimmed = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if await playWithServer(trimmed) { return }
+        if await playWithServer(trimmed, rate: effectiveRate) { return }
         for piece in SpeechText.split(trimmed) {
             if Task.isCancelled { return }
-            await speakTTS(piece)
+            await speakTTS(piece, rate: effectiveRate)
         }
     }
 
     /// 服务器合成一路：先把各段取齐（缓存或联网），再顺序播。
     /// 全部播完返回 true；任何一步失败返回 false，由调用方走系统语音。
-    private func playWithServer(_ text: String) async -> Bool {
+    private func playWithServer(_ text: String, rate: Double) async -> Bool {
         let base = Speech.shared.serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !base.isEmpty else { return false }
         do {
@@ -223,7 +229,7 @@ final class SpeechLoop: NSObject, ObservableObject {
         }
     }
 
-    private func speakTTS(_ text: String) async {
+    private func speakTTS(_ text: String, rate: Double) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -248,7 +254,7 @@ final class SpeechLoop: NSObject, ObservableObject {
     }
 
     /// 播包里的音频。播起来返回 true；文件损坏返回 false，由调用方继续往下走。
-    private func playLocal(_ url: URL) async -> Bool {
+    private func playLocal(_ url: URL, rate: Double) async -> Bool {
         guard let player = try? AVAudioPlayer(contentsOf: url) else { return false }
         Speech.shared.activateSession()
         player.enableRate = true
