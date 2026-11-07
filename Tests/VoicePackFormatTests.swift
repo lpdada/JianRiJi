@@ -19,7 +19,7 @@ final class VoicePackFormatTests: XCTestCase {
         entries: [(key: String, payload: [UInt8])],
         version: UInt16 = 1,
         magic: String = "JRJP"
-    ) -> Data {
+    ) throws -> Data {
         var payload = Data()
         var manifestEntries: [[String: Any]] = []
         for entry in entries {
@@ -42,7 +42,7 @@ final class VoicePackFormatTests: XCTestCase {
             "generated_at": "2026-01-01T00:00:00Z",
             "entries": manifestEntries,
         ]
-        let manifestData = try! JSONSerialization.data(withJSONObject: manifest, options: [])
+        let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [])
 
         var data = Data()
         data.append(Data(magic.utf8))
@@ -56,7 +56,7 @@ final class VoicePackFormatTests: XCTestCase {
     // MARK: - 解析
 
     func testParseValidPack() throws {
-        let pack = makePack(entries: [
+        let pack = try makePack(entries: [
             ("w-a", [0xFF, 0xFB, 0x90, 0x00]),
             ("w-b", [0xFF, 0xFB, 0x90, 0x11]),
         ])
@@ -74,8 +74,8 @@ final class VoicePackFormatTests: XCTestCase {
         XCTAssertEqual(payloadStart, pack.count - 8)
     }
 
-    func testRejectBadMagic() {
-        let pack = makePack(entries: [("w-a", [1, 2, 3, 4])], magic: "ZIPZ")
+    func testRejectBadMagic() throws {
+        let pack = try makePack(entries: [("w-a", [1, 2, 3, 4])], magic: "ZIPZ")
         XCTAssertThrowsError(try VoicePackInstaller.parseManifest(pack)) { error in
             guard case VoicePackFormatError.badMagic = error else {
                 return XCTFail("应该报 badMagic，实际 \(error)")
@@ -92,8 +92,8 @@ final class VoicePackFormatTests: XCTestCase {
         }
     }
 
-    func testRejectFutureVersion() {
-        let pack = makePack(entries: [("w-a", [1, 2, 3, 4])], version: 9)
+    func testRejectFutureVersion() throws {
+        let pack = try makePack(entries: [("w-a", [1, 2, 3, 4])], version: 9)
         XCTAssertThrowsError(try VoicePackInstaller.parseManifest(pack)) { error in
             guard case VoicePackFormatError.unsupportedVersion(let v) = error, v == 9 else {
                 return XCTFail("应该报 unsupportedVersion(9)，实际 \(error)")
@@ -101,15 +101,15 @@ final class VoicePackFormatTests: XCTestCase {
         }
     }
 
-    func testRejectTruncatedManifest() {
-        var pack = makePack(entries: [("w-a", [1, 2, 3, 4])])
+    func testRejectTruncatedManifest() throws {
+        var pack = try makePack(entries: [("w-a", [1, 2, 3, 4])])
         // 把头 10 字节留下，后面砍掉
         pack = pack.prefix(10)
         XCTAssertThrowsError(try VoicePackInstaller.parseManifest(pack))
     }
 
     func testRejectTruncatedPayload() throws {
-        var pack = makePack(entries: [("w-a", [1, 2, 3, 4])])
+        var pack = try makePack(entries: [("w-a", [1, 2, 3, 4])])
         // 砍掉最后两个字节，payload 就短了
         pack = pack.dropLast(2)
         XCTAssertThrowsError(try VoicePackInstaller.install(pack, packID: "unittest-truncated")) { error in
@@ -129,7 +129,7 @@ final class VoicePackFormatTests: XCTestCase {
             VoicePackInstaller.uninstall(packID: packID)
         }
 
-        let pack = makePack(entries: [
+        let pack = try makePack(entries: [
             ("w-unittest-one", [0xFF, 0xFB, 0x90, 0x01]),
             ("w-unittest-two", [0xFF, 0xFB, 0x90, 0x02]),
         ])
@@ -150,7 +150,7 @@ final class VoicePackFormatTests: XCTestCase {
 
     func testUninstallRemovesFiles() throws {
         let packID = "unittest-uninstall"
-        let pack = makePack(entries: [("w-unittest-gone", [0xFF, 0xFB, 0x90, 0x03])])
+        let pack = try makePack(entries: [("w-unittest-gone", [0xFF, 0xFB, 0x90, 0x03])])
         try VoicePackInstaller.install(pack, packID: packID)
         XCTAssertTrue(VoicePack.has("w-unittest-gone"))
 
@@ -164,7 +164,7 @@ final class VoicePackFormatTests: XCTestCase {
     func testEmptyEntriesInstallIsHarmless() throws {
         let packID = "unittest-empty"
         defer { VoicePackInstaller.uninstall(packID: packID) }
-        let pack = makePack(entries: [])
+        let pack = try makePack(entries: [])
         let count = try VoicePackInstaller.install(pack, packID: packID)
         XCTAssertEqual(count, 0)
     }

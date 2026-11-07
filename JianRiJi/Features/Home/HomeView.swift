@@ -213,7 +213,7 @@ struct HomeView: View {
     }
 
     private func bookRow(_ book: WordBook, tint: Color) -> some View {
-        let count = store.wordCount(in: book)
+        let words = store.words(in: book)
         let learned = store.learnedCount(in: book)
         let isCurrent = book.id == store.currentBook.id
 
@@ -232,7 +232,7 @@ struct HomeView: View {
                         .font(.footnote)
                         .foregroundStyle(Theme.muted)
                         .lineLimit(2)
-                    Text("共 \(count) 词 · 已学 \(learned) 词")
+                    Text("共 \(words.count) 词 · 已学 \(learned) 词")
                         .font(.footnote)
                         .foregroundStyle(Theme.muted)
                         .padding(.top, 2)
@@ -247,7 +247,7 @@ struct HomeView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Theme.mint, in: Capsule())
-                } else if count == 0 {
+                } else if words.isEmpty {
                     Text("暂无词")
                         .font(.footnote)
                         .foregroundStyle(Theme.muted.opacity(0.7))
@@ -261,8 +261,8 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(count == 0)
-        .opacity(count == 0 && !isCurrent ? 0.55 : 1)
+        .disabled(words.isEmpty)
+        .opacity(words.isEmpty && !isCurrent ? 0.55 : 1)
     }
 
     private func cover(_ book: WordBook, tint: Color) -> some View {

@@ -50,9 +50,9 @@ final class ServerTTSTests: XCTestCase {
         XCTAssertThrowsError(
             try ServerTTS.makeRequest(baseURL: "", text: "test", voiceID: ServerTTS.nanamiVoiceID, ratePercent: 0, timeout: 15)
         ) { error in
-            XCTAssertTrue(error is ServerTTS.Failure)
-            if case .notConfigured = error as! ServerTTS.Failure { } else {
+            guard let failure = error as? ServerTTS.Failure, case .notConfigured = failure else {
                 XCTFail("应为 notConfigured，实际：\(error)")
+                return
             }
         }
     }
@@ -61,8 +61,9 @@ final class ServerTTSTests: XCTestCase {
         XCTAssertThrowsError(
             try ServerTTS.makeRequest(baseURL: "ftp://example.com", text: "test", voiceID: ServerTTS.nanamiVoiceID, ratePercent: 0, timeout: 15)
         ) { error in
-            if case .invalidURL = error as! ServerTTS.Failure { } else {
+            guard let failure = error as? ServerTTS.Failure, case .invalidURL = failure else {
                 XCTFail("应为 invalidURL，实际：\(error)")
+                return
             }
         }
     }
@@ -72,8 +73,9 @@ final class ServerTTSTests: XCTestCase {
         XCTAssertThrowsError(
             try ServerTTS.makeRequest(baseURL: ServerTTS.defaultBaseURL, text: long, voiceID: ServerTTS.nanamiVoiceID, ratePercent: 0, timeout: 15)
         ) { error in
-            if case .textTooLong = error as! ServerTTS.Failure { } else {
+            guard let failure = error as? ServerTTS.Failure, case .textTooLong = failure else {
                 XCTFail("应为 textTooLong，实际：\(error)")
+                return
             }
         }
     }

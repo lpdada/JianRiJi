@@ -61,7 +61,7 @@ struct WeekBars: View {
         HStack(alignment: .bottom, spacing: 8) {
             ForEach(data) { item in
                 VStack(spacing: 6) {
-                    Text(item.count == 0 ? " " : "\(item.count)")
+                    Text(item.count > 0 ? "\(item.count)" : " ")
                         .font(.caption2)
                         .foregroundStyle(Theme.muted)
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
