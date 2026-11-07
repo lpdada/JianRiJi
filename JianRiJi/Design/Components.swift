@@ -61,11 +61,11 @@ struct WeekBars: View {
         HStack(alignment: .bottom, spacing: 8) {
             ForEach(data) { item in
                 VStack(spacing: 6) {
-                    Text(item.count > 0 ? "\(item.count)" : " ")
+                    Text(!item.isEmpty ? "\(item.count)" : " ")
                         .font(.caption2)
                         .foregroundStyle(Theme.muted)
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(item.count > 0 ? Theme.accent.opacity(0.85) : Color.primary.opacity(0.07))
+                        .fill(!item.isEmpty ? Theme.accent.opacity(0.85) : Color.primary.opacity(0.07))
                         .frame(height: 8 + CGFloat(item.count) / CGFloat(peak) * 76)
                     Text(DateText.weekday.string(from: item.day))
                         .font(.caption2)

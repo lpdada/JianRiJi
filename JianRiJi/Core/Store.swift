@@ -112,6 +112,7 @@ struct DayCount: Identifiable, Hashable {
     var id: Date { day }
     let day: Date
     let count: Int
+    var isEmpty: Bool { count == 0 }
 }
 
 /// 落盘用的整体快照。
