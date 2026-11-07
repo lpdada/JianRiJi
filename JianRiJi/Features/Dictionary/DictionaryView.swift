@@ -14,6 +14,10 @@ struct DictionaryView: View {
         var id: String { rawValue }
     }
 
+    init(initialScope: Scope = .search) {
+        _scope = State(initialValue: initialScope)
+    }
+
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
