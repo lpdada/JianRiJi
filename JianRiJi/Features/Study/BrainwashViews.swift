@@ -99,9 +99,9 @@ struct BrainwashOverlayView: View {
         .onTapGesture { exit() }
         .onAppear { start() }
         .onDisappear { loop.stopLoop() }
-        .onChange(of: loop.phase) { newPhase in
+        .task(id: loop.phase) {
             // 自然读完：phase 回到 idle，自动退出。
-            if newPhase == .idle, started, !exited {
+            if loop.phase == .idle, started, !exited {
                 exit()
             }
         }

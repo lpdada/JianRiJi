@@ -119,7 +119,7 @@ struct HandwritingView: View {
                         }
                 )
                 .onAppear { canvasSide = side }
-                .onChange(of: side) { canvasSide = $0 }
+                .task(id: side) { canvasSide = side }
             }
             .aspectRatio(1, contentMode: .fit)
             .frame(maxWidth: 340)

@@ -123,11 +123,11 @@ struct BookSwitchView: View {
                 Button(action: { category = c }) {
                     Text(c)
                         .font(.system(size: 15, weight: selected ? .bold : .semibold))
-                        .foregroundColor(selected ? .white : Color(hex: 0x5C6D65))
+                        .foregroundColor(selected ? .white : AppTheme.ink2)
                         .padding(.horizontal, 18)
                         .frame(height: 40)
                         .background(
-                            Capsule().fill(selected ? AppTheme.primary : Color(hex: 0xF4F7F5))
+                            Capsule().fill(selected ? AppTheme.primary : AppTheme.card)
                                 .shadow(color: selected ? AppTheme.primary.opacity(0.25) : .clear, radius: 10, x: 0, y: 3)
                         )
                 }
@@ -191,11 +191,11 @@ struct BookCard: View {
             Button(action: onToggle) {
                 Text(book.studying ? "学习中" : "学习")
                     .font(.system(size: 14.5, weight: book.studying ? .semibold : .bold))
-                    .foregroundColor(book.studying ? Color(hex: 0x94A49C) : AppTheme.primary)
+                    .foregroundColor(book.studying ? AppTheme.ink3 : AppTheme.primary)
                     .padding(.horizontal, 16)
                     .frame(height: 38)
                     .background(
-                        Capsule().fill(book.studying ? Color(hex: 0xEFF4F1) : AppTheme.primarySoft)
+                        Capsule().fill(book.studying ? AppTheme.track : AppTheme.primarySoft)
                             .overlay(Capsule().stroke(AppTheme.primarySoftStroke, lineWidth: 1).opacity(book.studying ? 0 : 1))
                     )
             }

@@ -97,8 +97,8 @@ struct WordStudyPageView: View {
                                 Color.clear.frame(height: 110)
                             }
                         }
-                        .onChange(of: flipped) { isFlipped in
-                            guard isFlipped else { return }
+                        .task(id: flipped) {
+                            guard flipped else { return }
                             withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo("study-top", anchor: .top)
                             }

@@ -58,9 +58,7 @@ struct KanaChartView: View {
                     .padding(.bottom, 14)
             }
         }
-        .onChange(of: mode) { _ in
-            lastSpoken = nil
-        }
+        .task(id: mode) { lastSpoken = nil }
     }
 
     private var header: some View {

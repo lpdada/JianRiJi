@@ -43,8 +43,8 @@ struct RootView: View {
         .tint(AppTheme.primary)
         .environmentObject(brainwash)
         .task { store.bootstrap() }
-        .onChange(of: scenePhase) { phase in
-            if phase != .active { store.flush() }
+        .task(id: scenePhase) {
+            if scenePhase != .active { store.flush() }
         }
     }
 
