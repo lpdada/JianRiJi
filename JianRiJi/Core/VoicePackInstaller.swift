@@ -198,8 +198,7 @@ enum VoicePackInstaller {
 // MARK: - 下载
 
 /// 带进度的下载器：`URLSession.download(for:)` 没有进度回调，这里自己实现。
-@unchecked Sendable
-final class VoicePackDownloader: NSObject {
+final class VoicePackDownloader: NSObject, @unchecked Sendable {
 
     private var continuation: CheckedContinuation<URL, Error>?
     private var onProgress: ((Double) -> Void)?
