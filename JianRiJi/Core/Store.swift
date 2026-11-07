@@ -21,10 +21,12 @@ struct AppSettings: Codable, Equatable {
     var aiModel: String = ""
     /// AI 接口地址，空 = 用厂商默认值；自定义厂商必须填
     var aiBaseURL: String = ""
+    /// 朗读服务器地址，空 = 只用系统语音。旧存档缺这个键时取默认值。
+    var ttsServerURL: String = ServerTTS.defaultBaseURL
 
     enum CodingKeys: String, CodingKey {
         case dailyGoal, reviewLimit, showRomaji, autoSpeak, speechRate, deckFilter
-        case aiVendor, aiModel, aiBaseURL
+        case aiVendor, aiModel, aiBaseURL, ttsServerURL
     }
 
     init() {}
@@ -40,6 +42,7 @@ struct AppSettings: Codable, Equatable {
         aiVendor = try c.decodeIfPresent(AIVendor.self, forKey: .aiVendor) ?? .opencodeGo
         aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
         aiBaseURL = try c.decodeIfPresent(String.self, forKey: .aiBaseURL) ?? ""
+        ttsServerURL = try c.decodeIfPresent(String.self, forKey: .ttsServerURL) ?? ServerTTS.defaultBaseURL
     }
 }
 
@@ -94,7 +97,11 @@ final class Store: ObservableObject {
     @Published private(set) var favorites: Set<String> = []
 
     @Published var settings: AppSettings = AppSettings() {
-        didSet { schedulePersist() }
+        didSet {
+            schedulePersist()
+            // 朗读地址是 AppSettings 的唯一来源，同步给 Speech 用。
+            Speech.shared.serverBaseURL = settings.ttsServerURL
+        }
     }
 
     private var bootstrapped = false

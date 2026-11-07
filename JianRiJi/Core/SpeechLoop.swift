@@ -24,9 +24,12 @@ final class SpeechLoop: NSObject, ObservableObject {
 
     private let synthesizer = AVSpeechSynthesizer()
     private let voice = AVSpeechSynthesisVoice(language: "ja-JP")
+    private var audioPlayer: AVAudioPlayer?
     private var pending: CheckedContinuation<Void, Never>?
     private var runTask: Task<Void, Never>?
     private var rate: Double = 0.45
+    /// 朗读轮次计数：超时兜底只放行自己这一轮，上一轮睡过头的超时不能把下一轮提前放行。
+    private var speakEpoch = 0
 
     override init() {
         super.init()
@@ -97,6 +100,11 @@ final class SpeechLoop: NSObject, ObservableObject {
         case .speaking:
             phase = .paused
             synthesizer.stopSpeaking(at: .immediate)
+            audioPlayer?.stop()
+            audioPlayer = nil
+            // 播放器 stop 不会触发 delegate 回调，这里直接放行，
+            // 循环会在下一句前等在 waitWhilePaused 里。
+            finishCurrent()
         case .paused:
             phase = .speaking
         case .idle:
@@ -109,6 +117,8 @@ final class SpeechLoop: NSObject, ObservableObject {
         runTask = nil
         phase = .idle
         synthesizer.stopSpeaking(at: .immediate)
+        audioPlayer?.stop()
+        audioPlayer = nil
         finishCurrent()
     }
 
@@ -126,23 +136,91 @@ final class SpeechLoop: NSObject, ObservableObject {
 
         Speech.shared.activateSession()
 
-        let utterance = AVSpeechUtterance(string: trimmed)
+        // 优先服务器合成；失败就走系统语音。
+        if await playWithServer(trimmed) { return }
+        await playWithSystemVoice(trimmed)
+    }
+
+    /// 服务器合成一路：先把各段取齐（缓存或联网），再顺序播。
+    /// 全部播完返回 true；任何一步失败返回 false，由调用方走系统语音。
+    private func playWithServer(_ text: String) async -> Bool {
+        let base = Speech.shared.serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return false }
+        do {
+            let percent = ServerTTS.ratePercent(forSpeechRate: rate)
+            let chunks = ServerTTS.chunks(of: text)
+            guard !chunks.isEmpty else { return true }
+            var datas: [Data] = []
+            datas.reserveCapacity(chunks.count)
+            for chunk in chunks {
+                if Task.isCancelled { return true }
+                datas.append(try await fetchServerAudio(chunk, percent: percent))
+            }
+            for data in datas {
+                if Task.isCancelled { return true }
+                await waitWhilePaused()
+                if Task.isCancelled || phase == .idle { return true }
+                await playServerAudio(data)
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func fetchServerAudio(_ chunk: String, percent: Int) async throws -> Data {
+        let key = ServerTTSCache.key(text: chunk, voiceID: ServerTTS.nanamiVoiceID, ratePercent: percent)
+        if let hit = ServerTTSCache.shared.existing(forKey: key) { return hit }
+        let client = ServerTTS(baseURL: Speech.shared.serverBaseURL)
+        let data = try await client.audio(text: chunk, voiceID: ServerTTS.nanamiVoiceID, ratePercent: percent)
+        return try ServerTTSCache.shared.store(data, forKey: key)
+    }
+
+    private func playServerAudio(_ data: Data) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            do {
+                let player = try AVAudioPlayer(data: data)
+                player.delegate = self
+                player.prepareToPlay()
+                guard player.play() else { throw ServerTTS.Failure.malformedAudio }
+                audioPlayer = player
+                pending = continuation
+                Speech.recordEngine("server")
+                speakEpoch += 1
+                armTimeout(seconds: min(20.0, player.duration + 10.0), epoch: speakEpoch)
+            } catch {
+                // 这一段播不出来：直接放行，不回退系统语音，
+                // 避免同一句被两种声音各念一遍。
+                continuation.resume()
+            }
+        }
+    }
+
+    private func playWithSystemVoice(_ text: String) async {
+        let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         utterance.rate = Float(min(max(rate, 0.30), 0.60))
         utterance.pitchMultiplier = 1.0
         utterance.preUtteranceDelay = 0
 
+        speakEpoch += 1
+        let epoch = speakEpoch
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             pending = continuation
             synthesizer.speak(utterance)
-
+            Speech.recordEngine("system")
             // 系统 TTS 偶尔不给 didFinish（切后台、语音包异常）。
             // 兜一个上限，宁可少等一拍，也不能让整个循环永久挂在这里。
-            let seconds = min(20.0, Double(trimmed.count) * 0.45 + 3.0)
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                self?.finishCurrent()
-            }
+            armTimeout(seconds: min(20.0, Double(text.count) * 0.45 + 3.0), epoch: epoch)
+        }
+    }
+
+    /// 超时兜底：只放行自己这一轮（epoch 对得上才放行）。
+    private func armTimeout(seconds: Double, epoch: Int) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard let self, self.speakEpoch == epoch else { return }
+            self.finishCurrent()
         }
     }
 
@@ -167,6 +245,17 @@ extension SpeechLoop: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer,
         didCancel utterance: AVSpeechUtterance
     ) {
+        Task { @MainActor in self.finishCurrent() }
+    }
+}
+
+extension SpeechLoop: AVAudioPlayerDelegate {
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.finishCurrent() }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor in self.finishCurrent() }
     }
 }

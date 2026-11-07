@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var store: Store
 
+    @AppStorage("tts.lastEngine") private var lastEngine = "system"
+
     @State private var showResetConfirm = false
     @State private var keyDraft = ""
     @State private var keyMessage = ""
@@ -45,7 +47,7 @@ struct SettingsView: View {
                         row("显示罗马字", "帮助发音")
                     }
                     Toggle(isOn: $store.settings.autoSpeak) {
-                        row("翻面自动朗读", "用系统 TTS")
+                        row("翻面自动朗读", "服务器合成（Nanami）")
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         row("朗读速度", String(format: "%.2f", store.settings.speechRate))
@@ -58,6 +60,19 @@ struct SettingsView: View {
                     if !Speech.shared.hasJapaneseVoice {
                         Text("系统里没找到日语语音。去「设置 → 辅助功能 → 朗读内容 → 声音 → 日语」下载一个，发音才准。")
                     }
+                }
+
+                Section {
+                    TextField("服务器地址，清空只用系统语音", text: $store.settings.ttsServerURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .keyboardType(.URL)
+
+                    row("上次", lastEngine == "server" ? "服务器合成（Nanami）" : "系统语音")
+                } header: {
+                    Text("朗读")
+                } footer: {
+                    Text("朗读优先用服务器合成 Nanami；服务器失败或地址清空时退回系统语音。")
                 }
 
                 Section {

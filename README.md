@@ -50,7 +50,9 @@ JianRiJi/
 │   │   ├── SRS.swift               # 纯函数记忆算法（可单测）
 │   │   ├── Store.swift             # 状态、队列、落盘、统计
 │   │   ├── KanaData.swift          # 五十音数据
-│   │   └── Speech.swift            # 系统 TTS 封装
+│   │   ├── Speech.swift            # 朗读入口：服务器合成优先，失败退系统 TTS
+│   │   ├── ServerTTS.swift         # 服务器合成 Nanami 客户端 + 磁盘缓存
+│   │   └── SpeechLoop.swift        # 经典模式的循环朗读（单句 / 洗脑）
 │   ├── Design/                     # 主题与通用组件
 │   ├── Features/                   # Home / Review / Kana / Dictionary / Dictation / Settings
 │   └── Resources/
@@ -84,6 +86,8 @@ open JianRiJi.xcodeproj
 4. Bundle Identifier 改成你自己的，签名选自己的 Team。
 
 真机跑之前去「设置 → 辅助功能 → 朗读内容 → 声音 → 日语」下一个语音包，不然发音会退回默认语言。
+
+朗读默认走服务器合成 Nanami（`https://asr.ysloving.com`，设置页可改地址、清空则只用系统语音）：单次最多 1000 字、长文本自动切段顺序播放，合成过的 MP3 缓存到本地；服务器失败时静默退回系统语音，设置页「上次」一行显示实际用的引擎。
 
 ## 词库
 
