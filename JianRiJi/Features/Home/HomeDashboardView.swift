@@ -87,7 +87,7 @@ struct HomeDashboardView: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 42)
-                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.05), y: 1, blur: 2))
+                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1))
             }
             .buttonStyle(.plain)
 
@@ -102,7 +102,7 @@ struct HomeDashboardView: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 42)
-                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.05), y: 1, blur: 2))
+                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1))
             }
             .buttonStyle(.plain)
         }
@@ -191,7 +191,7 @@ struct HomeDashboardView: View {
         .background(
             RoundedRectangle(cornerRadius: AppTheme.heroRadius, style: .continuous)
                 .fill(AppTheme.card)
-                .shadow(color: .black.opacity(0.05), y: 4, blur: 14)
+                .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 4)
         )
     }
 
@@ -229,7 +229,7 @@ struct HomeDashboardView: View {
             .background(
                 RoundedRectangle(cornerRadius: AppTheme.tileRadius, style: .continuous)
                     .fill(AppTheme.card)
-                    .shadow(color: .black.opacity(0.05), y: 4, blur: 12)
+                    .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4)
             )
         }
         .buttonStyle(.plain)
@@ -274,7 +274,7 @@ struct HomeDashboardView: View {
             .background(
                 RoundedRectangle(cornerRadius: AppTheme.tileRadius, style: .continuous)
                     .fill(AppTheme.card)
-                    .shadow(color: .black.opacity(0.04), y: 4, blur: 12)
+                    .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
             )
         }
         .buttonStyle(.plain)
@@ -307,7 +307,7 @@ struct MainCTAButton: View {
                     LinearGradient(colors: [AppTheme.primaryPressed, AppTheme.primaryDeep],
                                    startPoint: .top, endPoint: .bottom)
                 )
-                .shadow(color: AppTheme.primary.opacity(0.28), y: 6, blur: 16)
+                .shadow(color: AppTheme.primary.opacity(0.28), radius: 16, x: 0, y: 6)
             )
         }
         .buttonStyle(.plain)

@@ -339,7 +339,7 @@ struct WordStudyPageView: View {
            BracketFuriganaParser.plainMatches(furigana, sentence: example) {
             return ExampleTokenizer.tokens(sentence: example, furigana: furigana)
         }
-        return JapaneseSegmenter.shared.segment(example).map(ExampleToken.init(old:))
+        return JapaneseSegmenter.shared.segment(example).map(ExampleToken.fromOld)
     }
 
     /// 例句的真人音频 key：`w-<词条id>-ex`，由「生成真人语音」写入。
@@ -463,7 +463,7 @@ struct WordStudyPageView: View {
                 .foregroundColor(AppTheme.ink)
                 .padding(.horizontal, 24)
                 .frame(height: 56)
-                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.08), y: 2, blur: 6))
+                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2))
             }
             .buttonStyle(.plain)
             Spacer()

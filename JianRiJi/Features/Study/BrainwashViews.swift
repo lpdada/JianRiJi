@@ -91,7 +91,7 @@ struct BrainwashOverlayView: View {
                     .font(.system(size: 17.5, weight: .heavy))
                     .foregroundColor(AppTheme.primaryDeep)
                     .frame(width: 128, height: 56)
-                    .background(Capsule().fill(Color.white).shadow(color: .black.opacity(0.25), y: 3, blur: 10))
+                    .background(Capsule().fill(Color.white).shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 3))
                     .padding(.top, 26)
                     .onTapGesture { openSettings() }
             }

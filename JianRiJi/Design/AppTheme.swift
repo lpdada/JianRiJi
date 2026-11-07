@@ -90,7 +90,7 @@ struct PillButton<Label: View>: View {
             .foregroundColor(AppTheme.ink2)
             .padding(.horizontal, 16)
             .frame(height: 40)
-            .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.06), y: 1, blur: 2))
+            .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.06), radius: 2, x: 0, y: 1))
         }
         .buttonStyle(.plain)
     }
@@ -150,7 +150,7 @@ struct BookCoverTile: View {
             , alignment: .center
         )
         .frame(width: size.width, height: size.height)
-        .shadow(color: .black.opacity(0.15), y: 3, blur: 8)
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 3)
     }
 }
 

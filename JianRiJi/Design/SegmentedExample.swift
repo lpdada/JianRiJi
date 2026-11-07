@@ -27,8 +27,9 @@ struct ExampleToken: Identifiable, Hashable {
     var isBlank: Bool { surface.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// 词库分词器的段转显示段：读音 / 罗马字直接沿用。
-    init(old segment: ExampleSegment) {
-        self.init(
+    /// 静态工厂（不用 init(old:)：自定义 init 会吃掉 memberwise init 合成）。
+    static func fromOld(_ segment: ExampleSegment) -> ExampleToken {
+        ExampleToken(
             id: segment.id,
             surface: segment.surface,
             furigana: segment.reading,
@@ -136,7 +137,7 @@ enum ParticleSplitter {
     /// 空白不进段（句子里的空格只是分隔符）。
     static func split(_ sentence: String) -> [(surface: String, furigana: String?)] {
         var tokens: [(String, String?)] = []
-        var rest = Array(sentence)
+        let rest = Array(sentence)
         var buffer = ""
         let parts = particles.sorted { $0.count > $1.count }
         var idx = 0
@@ -288,7 +289,7 @@ struct SegmentedExampleView: View {
     var onTapSegment: (ExampleToken) -> Void = { _ in }
 
     var body: some View {
-        SegmentFlowLayout(alignment: .topLeading, spacing: 6, lineSpacing: 20) {
+        SegmentFlowLayout(alignment: .leading, spacing: 6, lineSpacing: 20) {
             ForEach(segments) { seg in
                 segmentView(seg)
             }

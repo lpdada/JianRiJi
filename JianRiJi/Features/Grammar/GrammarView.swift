@@ -222,14 +222,14 @@ struct GrammarDetailView: View {
                     ZStack {
                         Circle().fill(AppTheme.primaryDeep)
                             .frame(width: 80, height: 80)
-                            .shadow(color: AppTheme.primary.opacity(0.35), y: 8, blur: 20)
+                            .shadow(color: AppTheme.primary.opacity(0.35), radius: 20, x: 0, y: 8)
                         Image(systemName: "pawprint.fill").font(.system(size: 30, weight: .bold)).foregroundColor(.white)
                     }
                 }
                 .buttonStyle(.plain)
                 ZStack {
                     Circle().fill(Color(hex: 0xCFE4D9)).frame(width: 74, height: 74)
-                        .shadow(color: AppTheme.primary.opacity(0.2), y: 6, blur: 16)
+                        .shadow(color: AppTheme.primary.opacity(0.2), radius: 16, x: 0, y: 6)
                     Image(systemName: "mic.fill").font(.system(size: 26, weight: .semibold)).foregroundColor(AppTheme.primary)
                 }
                 // 长按 0.4 秒播放例句音频（只听不录）；原稿的 .infinity 永远触发不了。

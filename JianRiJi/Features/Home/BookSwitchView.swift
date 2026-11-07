@@ -111,7 +111,7 @@ struct BookSwitchView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 42)
-            .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.05), y: 1, blur: 2))
+            .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1))
         }
         .padding(.top, 4)
     }
@@ -128,7 +128,7 @@ struct BookSwitchView: View {
                         .frame(height: 40)
                         .background(
                             Capsule().fill(selected ? AppTheme.primary : Color(hex: 0xF4F7F5))
-                                .shadow(color: selected ? AppTheme.primary.opacity(0.25) : .clear, y: 3, blur: 10)
+                                .shadow(color: selected ? AppTheme.primary.opacity(0.25) : .clear, radius: 10, x: 0, y: 3)
                         )
                 }
                 .buttonStyle(.plain)
@@ -152,7 +152,7 @@ struct BookSwitchView: View {
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(AppTheme.card)
-                .shadow(color: .black.opacity(0.05), y: 1, blur: 2)
+                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
         )
     }
 }
@@ -205,7 +205,7 @@ struct BookCard: View {
         .background(
             RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
                 .fill(AppTheme.card)
-                .shadow(color: .black.opacity(0.04), y: 3, blur: 10)
+                .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 3)
         )
     }
 }
