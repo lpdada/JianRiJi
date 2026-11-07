@@ -62,8 +62,12 @@ final class Speech: NSObject {
                   let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             if type == .ended {
-                self.sessionConfigured = false
-                self.activateSession()
+                // 通知回调是 nonisolated 的 Sendable 闭包，不能直接碰 @MainActor 的状态，
+                // 跳回主 actor 再改（与 SpeechLoop 的 delegate 回调同款写法）。
+                Task { @MainActor in
+                    self.sessionConfigured = false
+                    self.activateSession()
+                }
             }
         })
         observers.append(center.addObserver(
@@ -71,8 +75,11 @@ final class Speech: NSObject {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] _ in
-            self?.sessionConfigured = false
-            self?.activateSession()
+            guard let self else { return }
+            Task { @MainActor in
+                self.sessionConfigured = false
+                self.activateSession()
+            }
         })
     }
 

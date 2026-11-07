@@ -16,45 +16,8 @@ struct AIExplanationView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(word.term)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundStyle(Theme.accent)
-                        Text("\(word.reading)  ・  \(word.romaji)  ・  \(word.partOfSpeech)  ・  \(word.meaning)")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.muted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .paperCard(padding: 16)
-
-                    if loading {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                            Text("正在问 \(store.settings.aiVendor.displayName)…")
-                                .font(.subheadline)
-                                .foregroundStyle(Theme.muted)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .paperCard(padding: 16)
-                    } else if let result {
-                        Text(result)
-                            .font(.system(size: 17))
-                            .lineSpacing(4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .paperCard(padding: 16)
-                    } else if let errorMessage {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(errorMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(Color(red: 0.78, green: 0.32, blue: 0.28))
-                            Button("再试一次") { ask() }
-                                .buttonStyle(.plain)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Theme.accent)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .paperCard(padding: 16)
-                    }
+                    headerCard
+                    stateCard
 
                     Text("AI 生成，仅供参考，以词典和语法书为准。")
                         .font(.caption2)
@@ -76,6 +39,52 @@ struct AIExplanationView: View {
                     ask()
                 }
             }
+        }
+    }
+
+    // body 整段一次类型检查要 258ms（Release 上限 200ms 会直接报错），拆成两个小块各自检查。
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(word.term)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.accent)
+            Text("\(word.reading)  ・  \(word.romaji)  ・  \(word.partOfSpeech)  ・  \(word.meaning)")
+                .font(.subheadline)
+                .foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .paperCard(padding: 16)
+    }
+
+    @ViewBuilder
+    private var stateCard: some View {
+        if loading {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("正在问 \(store.settings.aiVendor.displayName)…")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .paperCard(padding: 16)
+        } else if let result {
+            Text(result)
+                .font(.system(size: 17))
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .paperCard(padding: 16)
+        } else if let errorMessage {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(errorMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(Color(red: 0.78, green: 0.32, blue: 0.28))
+                Button("再试一次") { ask() }
+                    .buttonStyle(.plain)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .paperCard(padding: 16)
         }
     }
 
