@@ -44,6 +44,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

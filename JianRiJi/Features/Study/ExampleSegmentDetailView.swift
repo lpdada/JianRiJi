@@ -232,7 +232,11 @@ struct ExampleSegmentDetailView: View {
         VStack(spacing: 10) {
             Button {
                 let text = segment.reading ?? segment.surface
-                Speech.shared.speak(text, rate: store.settings.speechRate)
+                Speech.shared.speak(
+                    text,
+                    rate: store.settings.speechRate,
+                    audioKey: segment.word.map { VoicePack.key(forWord: $0.id) }
+                )
             } label: {
                 Label("读这一小段", systemImage: "speaker.wave.2.fill")
             }
@@ -240,7 +244,11 @@ struct ExampleSegmentDetailView: View {
 
             if let word = segment.word {
                 Button {
-                    Speech.shared.speak(word.reading, rate: max(0.30, store.settings.speechRate - 0.15))
+                    Speech.shared.speak(
+                        word.reading,
+                        rate: max(0.30, store.settings.speechRate - 0.15),
+                        audioKey: VoicePack.key(forWord: word.id)
+                    )
                 } label: {
                     Text("慢速读词条")
                 }

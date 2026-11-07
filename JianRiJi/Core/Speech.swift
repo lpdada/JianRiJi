@@ -1,23 +1,30 @@
 import AVFoundation
+import Foundation
 
-/// 朗读：优先走服务器合成 Nanami，任何一步失败都静默退回系统 TTS，不弹窗。
-/// 服务器地址为空时只用系统语音。地址由 Store 从 AppSettings 同步过来。
-/// 注意：设备上没装日语语音包时，系统会退回默认语言，听感会差一截。
+/// 念日文。优先级：**本地真人音频 → 服务器合成 Nanami → 系统高质量语音 → 系统默认语音**。
+///
+/// 三件事决定了它听起来自不自然：
+/// 1. 用哪条语音。`AVSpeechSynthesisVoice(language: "ja-JP")` 拿到的是系统默认档
+///    （compact，机械），这里改成走 `VoiceCatalog`，优先设备上的增强 / 高级语音；
+/// 2. 断句。长句按句读切开分别合成，段间留一点停顿，别一口气念到底；
+/// 3. 有没有真人录音。`VoicePack` 里存了同 key 的音频就直接播音频；
+///    没有包音频时走服务器合成 Nanami（和包里同一个声音），服务器失败才走系统语音。
+/// 任何一步失败都静默走下一层，不弹窗。
 final class Speech: NSObject {
     static let shared = Speech()
 
-    /// 上次实际用的引擎，设置页的「上次」行读它。
+    /// 上次实际用的引擎，设置页的「上次」行读它。取值：voicepack / server / system。
     static let lastEngineKey = "tts.lastEngine"
 
     static func recordEngine(_ engine: String) {
         UserDefaults.standard.set(engine, forKey: lastEngineKey)
     }
 
-    /// 服务器合成地址，空 = 只用系统语音。默认填用户自己的代理。
+    /// 服务器合成地址，空 = 跳过服务器。默认填用户自己的代理。
     var serverBaseURL: String = ServerTTS.defaultBaseURL
 
     private let synthesizer = AVSpeechSynthesizer()
-    private let voice = AVSpeechSynthesisVoice(language: "ja-JP")
+    private var audioPlayer: AVAudioPlayer?
     private var sessionConfigured = false
 
     private var player: AVAudioPlayer?
@@ -30,13 +37,16 @@ final class Speech: NSObject {
     private override init() {
         super.init()
         #if DEBUG
-        if voice == nil {
-            print("[JianRiJi] 系统里没有 ja-JP 语音，去 设置 → 辅助功能 → 朗读内容 → 声音 里下一个。")
+        if VoiceCatalog.hasNoJapaneseVoice {
+            print("[JianRiJi] 系统里没有日语语音，去 设置 → 辅助功能 → 朗读内容 → 声音 → 日语 下一个。")
         }
         #endif
     }
 
-    var hasJapaneseVoice: Bool { voice != nil }
+    var hasJapaneseVoice: Bool { !VoiceCatalog.hasNoJapaneseVoice }
+
+    /// 当前是否还在用默认（机械）档——设置页据此给「下载增强语音」的引导。
+    var isUsingCompactVoice: Bool { VoiceCatalog.isUsingCompactVoice }
 
     /// 打开后台播放的音频会话（随身听连播时需要，Info.plist 里有 UIBackgroundModes: audio）。
     func activateSession() {
@@ -53,7 +63,10 @@ final class Speech: NSObject {
         }
     }
 
-    func speak(_ text: String, rate: Double = 0.45) {
+    /// 念一句话。
+    /// - Parameters:
+    ///   - audioKey: 有本地真人音频时传 `VoicePack` 的 key（如 `w-<词条id>`），会优先播音频。
+    func speak(_ text: String, rate: Double = 0.45, audioKey: String? = nil) {
         activateSession()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -61,33 +74,41 @@ final class Speech: NSObject {
         fallbackText = trimmed
         fallbackRate = rate
 
-        let base = serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !base.isEmpty else {
-            speakWithSystemVoice(trimmed, rate: rate)
-            return
+        // 1. 本地真人音频
+        if let audioKey, let url = VoicePack.url(for: audioKey) {
+            if playLocal(url, rate: rate) { return }
+            // 文件损坏：继续往下走，不拿文件名当朗读内容。
         }
 
-        let percent = ServerTTS.ratePercent(forSpeechRate: rate)
-        let chunks = ServerTTS.chunks(of: trimmed)
-        guard !chunks.isEmpty else { return }
-
-        // 地址在任务开始前取一次，后台任务里不再读可变属性。
-        let baseURL = base
-        workTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                var datas: [Data] = []
-                datas.reserveCapacity(chunks.count)
-                for chunk in chunks {
-                    if Task.isCancelled { return }
-                    datas.append(try await self.fetchAudio(chunk, baseURL: baseURL, percent: percent))
+        // 2. 服务器合成 Nanami
+        let base = serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !base.isEmpty {
+            let percent = ServerTTS.ratePercent(forSpeechRate: rate)
+            let chunks = ServerTTS.chunks(of: trimmed)
+            if !chunks.isEmpty {
+                // 地址在任务开始前取一次，后台任务里不再读可变属性。
+                let baseURL = base
+                workTask = Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        var datas: [Data] = []
+                        datas.reserveCapacity(chunks.count)
+                        for chunk in chunks {
+                            if Task.isCancelled { return }
+                            datas.append(try await self.fetchAudio(chunk, baseURL: baseURL, percent: percent))
+                        }
+                        await MainActor.run { self.enqueueAndPlay(datas) }
+                    } catch {
+                        // 服务器任何一步失败：静默退回系统语音。
+                        await MainActor.run { self.speakWithSystemVoice(trimmed, rate: rate) }
+                    }
                 }
-                await MainActor.run { self.enqueueAndPlay(datas) }
-            } catch {
-                // 服务器任何一步失败：静默退回系统语音。
-                await MainActor.run { self.speakWithSystemVoice(trimmed, rate: rate) }
+                return
             }
         }
+
+        // 3. 系统语音
+        speakWithSystemVoice(trimmed, rate: rate)
     }
 
     func stop() {
@@ -98,6 +119,8 @@ final class Speech: NSObject {
         playQueue.removeAll()
         player?.stop()
         player = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
@@ -165,19 +188,43 @@ final class Speech: NSObject {
 
     private func speakWithSystemVoice(_ text: String, rate: Double) {
         activateSession()
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = voice
-        utterance.rate = clampedRate(rate)
-        utterance.pitchMultiplier = 1.0
-        utterance.preUtteranceDelay = 0
+        let voice = VoiceCatalog.utteranceVoice()
+        let pieces = SpeechText.split(text)
+        guard !pieces.isEmpty else { return }
         Self.recordEngine("system")
-        synthesizer.speak(utterance)
+
+        // AVSpeechSynthesizer 自己会按顺序排队播，不用外部串接。
+        for (index, piece) in pieces.enumerated() {
+            let utterance = AVSpeechUtterance(string: piece)
+            utterance.voice = voice
+            utterance.rate = clampedRate(rate)
+            utterance.pitchMultiplier = 1.0
+            // 段间留一点换气感，第一段不等。
+            utterance.preUtteranceDelay = index == 0 ? 0 : 0.08
+            synthesizer.speak(utterance)
+        }
     }
 
     private func clampedRate(_ rate: Double) -> Float {
         let bounds = Double(AVSpeechUtteranceMinimumSpeechRate)...Double(AVSpeechUtteranceMaximumSpeechRate)
         let safe = min(max(rate, bounds.lowerBound), bounds.upperBound)
         return Float(safe)
+    }
+
+    // MARK: - 本地真人音频
+
+    /// 播包里的音频。播起来返回 true；文件损坏或格式不支持返回 false，由调用方继续往下走。
+    private func playLocal(_ url: URL, rate: Double) -> Bool {
+        guard let player = try? AVAudioPlayer(contentsOf: url) else { return false }
+        player.enableRate = true
+        // TTS 的 rate（0.30~0.60）和 AVAudioPlayer 的 rate（1.0 = 原速）不是一套刻度，
+        // 这里换算成 0.73~0.91 倍速，接近正常说话的节奏。
+        player.rate = Float(min(max(0.55 + rate * 0.6, 0.5), 1.2))
+        player.prepareToPlay()
+        guard player.play() else { return false }
+        audioPlayer = player
+        Self.recordEngine("voicepack")
+        return true
     }
 }
 

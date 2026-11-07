@@ -16,6 +16,22 @@ struct SettingsView: View {
         return "\(v) (\(b))"
     }
 
+    /// 设置页右上那行小字：当前用的是哪一档语音。
+    private var voiceSummary: String {
+        if VoiceCatalog.hasNoJapaneseVoice { return "未安装" }
+        guard let option = VoiceCatalog.current() else { return "默认" }
+        return option.qualityLabel
+    }
+
+    /// 「朗读」区「上次」行的三档映射：语音包 / 服务器合成 / 系统语音。
+    private var lastEngineText: String {
+        switch lastEngine {
+        case "voicepack": return "语音包"
+        case "server": return "服务器合成（Nanami）"
+        default: return "系统语音"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -47,7 +63,7 @@ struct SettingsView: View {
                         row("显示罗马字", "帮助发音")
                     }
                     Toggle(isOn: $store.settings.autoSpeak) {
-                        row("翻面自动朗读", "服务器合成（Nanami）")
+                        row("翻面自动朗读", "语音包优先")
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         row("朗读速度", String(format: "%.2f", store.settings.speechRate))
@@ -63,26 +79,44 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    TextField("服务器地址，清空只用系统语音", text: $store.settings.ttsServerURL)
+                    TextField("服务器地址，清空则跳过服务器", text: $store.settings.ttsServerURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
                         .keyboardType(.URL)
 
-                    row("上次", lastEngine == "server" ? "服务器合成（Nanami）" : "系统语音")
+                    row("上次", lastEngineText)
                 } header: {
                     Text("朗读")
                 } footer: {
-                    Text("朗读优先用服务器合成 Nanami；服务器失败或地址清空时退回系统语音。")
+                    Text("朗读按语音包、服务器、系统语音的顺序来，失败逐层退回；地址清空则跳过服务器。")
                 }
 
                 Section {
+                    NavigationLink {
+                        VoiceSettingsView()
+                            .environmentObject(store)
+                    } label: {
+                        HStack {
+                            Text("语音")
+                            Spacer()
+                            Text(voiceSummary)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+
                     Button {
                         Speech.shared.speak("こんばんは。いい声が出ていますか。", rate: store.settings.speechRate)
                     } label: {
                         Label("试听一句", systemImage: "waveform")
                     }
                 } header: {
-                    Text("试听")
+                    Text("声音")
+                } footer: {
+                    if VoiceCatalog.isUsingCompactVoice {
+                        Text("现在是「默认」音质，也就是听着最机械的那一档。进「语音」里换增强 / 高级语音，或者装一个免费语音包。")
+                    } else {
+                        Text("朗读优先用语音包里的录音，其次服务器合成 Nanami，最后系统语音。")
+                    }
                 }
 
                 Section {

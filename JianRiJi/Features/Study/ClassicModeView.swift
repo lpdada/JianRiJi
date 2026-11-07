@@ -110,7 +110,17 @@ struct ClassicModeView: View {
             // 留一点时间让卡片先画出来，别一进页面就抢着念。
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard autoSpeakExample, !speaker.isRunning else { return }
-            speaker.speak(word.example ?? word.reading, rate: store.settings.speechRate)
+            if let example = word.example, !example.isEmpty {
+                speaker.speak(
+                    SpeechLine(example, audioKey: exampleAudioKey(word)),
+                    rate: store.settings.speechRate
+                )
+            } else {
+                speaker.speak(
+                    SpeechLine(word.reading, audioKey: VoicePack.key(forWord: word.id)),
+                    rate: store.settings.speechRate
+                )
+            }
         }
         .sheet(isPresented: $showList) {
             QueueListView(queue: queue, currentIndex: index, title: store.currentBookTitle)
@@ -174,7 +184,11 @@ struct ClassicModeView: View {
 
             HStack(spacing: 14) {
                 Button {
-                    Speech.shared.speak(word.reading, rate: store.settings.speechRate)
+                    Speech.shared.speak(
+                        word.reading,
+                        rate: store.settings.speechRate,
+                        audioKey: VoicePack.key(forWord: word.id)
+                    )
                 } label: {
                     Image(systemName: "speaker.wave.2.fill")
                         .foregroundStyle(Theme.muted)
@@ -204,10 +218,18 @@ struct ClassicModeView: View {
     private func actionPills(_ word: Word) -> some View {
         HStack(spacing: 8) {
             capsule("发音", icon: "speaker.wave.2.fill") {
-                Speech.shared.speak(word.reading, rate: store.settings.speechRate)
+                Speech.shared.speak(
+                    word.reading,
+                    rate: store.settings.speechRate,
+                    audioKey: VoicePack.key(forWord: word.id)
+                )
             }
             capsule("慢速", icon: "tortoise.fill") {
-                Speech.shared.speak(word.reading, rate: max(0.30, store.settings.speechRate - 0.15))
+                Speech.shared.speak(
+                    word.reading,
+                    rate: max(0.30, store.settings.speechRate - 0.15),
+                    audioKey: VoicePack.key(forWord: word.id)
+                )
             }
             capsule(
                 autoSpeakExample ? "自动读" : "静音",
@@ -284,7 +306,11 @@ struct ClassicModeView: View {
 
                 HStack(spacing: 14) {
                     Button {
-                        Speech.shared.speak(example, rate: store.settings.speechRate)
+                        Speech.shared.speak(
+                            example,
+                            rate: store.settings.speechRate,
+                            audioKey: exampleAudioKey(word)
+                        )
                     } label: {
                         Label("发音", systemImage: "speaker.wave.2.fill")
                             .font(.caption)
@@ -293,7 +319,10 @@ struct ClassicModeView: View {
                     .foregroundStyle(Theme.indigo)
 
                     Button {
-                        speaker.speak(example, rate: max(0.30, store.settings.speechRate - 0.15))
+                        speaker.speak(
+                            SpeechLine(example, audioKey: exampleAudioKey(word)),
+                            rate: max(0.30, store.settings.speechRate - 0.15)
+                        )
                     } label: {
                         Label("慢速", systemImage: "tortoise.fill")
                             .font(.caption)
@@ -336,6 +365,11 @@ struct ClassicModeView: View {
 
     private func exampleSegments(_ example: String) -> [ExampleSegment] {
         JapaneseSegmenter.shared.segment(example)
+    }
+
+    /// 例句的真人音频 key：`w-<词条id>-ex`，由「生成真人语音」写入。
+    private func exampleAudioKey(_ word: Word) -> String {
+        VoicePack.key(forWord: word.id) + "-ex"
     }
 
     @ViewBuilder
@@ -595,9 +629,9 @@ struct ClassicModeView: View {
     private func handleWashTap(_ word: Word) {
         switch speaker.phase {
         case .idle:
-            var lines = [word.reading]
+            var lines = [SpeechLine(word.reading, audioKey: VoicePack.key(forWord: word.id))]
             if let example = word.example, !example.isEmpty {
-                lines.append(example)
+                lines.append(SpeechLine(example, audioKey: exampleAudioKey(word)))
             }
             speaker.startLoop(lines, rounds: washRounds, rate: store.settings.speechRate)
         case .speaking, .paused:

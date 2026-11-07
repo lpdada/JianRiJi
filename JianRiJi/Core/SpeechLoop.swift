@@ -1,14 +1,29 @@
 import AVFoundation
 import Foundation
 
+/// 朗读队列里的一条。
+///
+/// `audioKey` 指向 `VoicePack` 里的真人音频（`w-<词条id>` 之类）；
+/// 有音频就播音频，没有才走服务器合成 / TTS。
+struct SpeechLine: Hashable {
+    let text: String
+    let audioKey: String?
+
+    init(_ text: String, audioKey: String? = nil) {
+        self.text = text
+        self.audioKey = audioKey
+    }
+}
+
 /// 朗读控制器：单句朗读 + 「洗脑」循环（读 N 遍，可暂停 / 可停）。
 ///
-/// 为什么不用 `Speech` 直接循环：`Speech.swift` 里的 `speak` 是"发出去就不管了"，
+/// 为什么不用 `Speech` 直接循环：`Speech.swift` 的 `speak` 是"发出去就不管了"，
 /// 没有播完回调，循环只能按字数估算等待，长句要么被截断、要么空等。
-/// 这里自己拿 `AVSpeechSynthesizerDelegate` 的 didFinish，读完一句再读下一句。
+/// 这里自己拿 `AVSpeechSynthesizerDelegate` 的 didFinish 与
+/// `AVAudioPlayerDelegate` 的 didFinishPlaying，读完一条再读下一条。
 ///
-/// 两套 synthesizer（Speech 和这里）不会同时发声：经典模式统一只用这个，
-/// 词条详情的「读一遍」用 `Speech`，两者不在同一个界面同时用。
+/// 朗读顺序和 `Speech` 一致：本地包音频 → 服务器合成 Nanami → 系统语音，
+/// 任何一步失败都静默走下一层。
 @MainActor
 final class SpeechLoop: NSObject, ObservableObject {
 
@@ -23,9 +38,11 @@ final class SpeechLoop: NSObject, ObservableObject {
     @Published private(set) var totalRounds = 0
 
     private let synthesizer = AVSpeechSynthesizer()
-    private let voice = AVSpeechSynthesisVoice(language: "ja-JP")
-    private var audioPlayer: AVAudioPlayer?
     private var pending: CheckedContinuation<Void, Never>?
+
+    private var audioPlayer: AVAudioPlayer?
+    private var audioPending: CheckedContinuation<Void, Never>?
+
     private var runTask: Task<Void, Never>?
     private var rate: Double = 0.45
     /// 朗读轮次计数：超时兜底只放行自己这一轮，上一轮睡过头的超时不能把下一轮提前放行。
@@ -47,22 +64,24 @@ final class SpeechLoop: NSObject, ObservableObject {
     // MARK: - 对外接口
 
     /// 读一句，读完就结束。
-    func speak(_ text: String, rate: Double) {
+    func speak(_ line: SpeechLine, rate: Double) {
         stopLoop()
         self.rate = rate
         runTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.speakOnce(text)
+            await self.speakOnce(line)
             self.runTask = nil
         }
     }
 
-    /// 循环朗读：每遍按顺序读 `lines` 里的每一句，一共 `rounds` 遍。
-    func startLoop(_ lines: [String], rounds: Int, rate: Double) {
+    func speak(_ text: String, rate: Double) {
+        speak(SpeechLine(text), rate: rate)
+    }
+
+    /// 循环朗读：每遍按顺序读 `lines` 里的每一条，一共 `rounds` 遍。
+    func startLoop(_ lines: [SpeechLine], rounds: Int, rate: Double) {
         stopLoop()
-        let cleaned = lines
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let cleaned = lines.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard !cleaned.isEmpty, rounds > 0 else { return }
 
         self.rate = rate
@@ -105,6 +124,7 @@ final class SpeechLoop: NSObject, ObservableObject {
             // 播放器 stop 不会触发 delegate 回调，这里直接放行，
             // 循环会在下一句前等在 waitWhilePaused 里。
             finishCurrent()
+            finishAudio()
         case .paused:
             phase = .speaking
         case .idle:
@@ -120,6 +140,7 @@ final class SpeechLoop: NSObject, ObservableObject {
         audioPlayer?.stop()
         audioPlayer = nil
         finishCurrent()
+        finishAudio()
     }
 
     // MARK: - 内部
@@ -130,15 +151,19 @@ final class SpeechLoop: NSObject, ObservableObject {
         }
     }
 
-    private func speakOnce(_ text: String) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// 读一条：有真人音频先播音频，没有走服务器合成，都没有才按句读切段走 TTS。
+    private func speakOnce(_ line: SpeechLine) async {
+        if let audioKey = line.audioKey, let url = VoicePack.url(for: audioKey) {
+            if await playLocal(url) { return }
+            // 文件损坏：继续往下走，不拿文件名当朗读内容。
+        }
+        let trimmed = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-
-        Speech.shared.activateSession()
-
-        // 优先服务器合成；失败就走系统语音。
         if await playWithServer(trimmed) { return }
-        await playWithSystemVoice(trimmed)
+        for piece in SpeechText.split(trimmed) {
+            if Task.isCancelled { return }
+            await speakTTS(piece)
+        }
     }
 
     /// 服务器合成一路：先把各段取齐（缓存或联网），再顺序播。
@@ -177,6 +202,8 @@ final class SpeechLoop: NSObject, ObservableObject {
     }
 
     private func playServerAudio(_ data: Data) async {
+        speakEpoch += 1
+        let epoch = speakEpoch
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             do {
                 let player = try AVAudioPlayer(data: data)
@@ -186,8 +213,8 @@ final class SpeechLoop: NSObject, ObservableObject {
                 audioPlayer = player
                 pending = continuation
                 Speech.recordEngine("server")
-                speakEpoch += 1
-                armTimeout(seconds: min(20.0, player.duration + 10.0), epoch: speakEpoch)
+                // 播放器万一不给 didFinish 回调，按本段时长 + 10 秒兜底。
+                armTimeout(seconds: min(20.0, player.duration + 10.0), epoch: epoch, target: .tts)
             } catch {
                 // 这一段播不出来：直接放行，不回退系统语音，
                 // 避免同一句被两种声音各念一遍。
@@ -196,9 +223,14 @@ final class SpeechLoop: NSObject, ObservableObject {
         }
     }
 
-    private func playWithSystemVoice(_ text: String) async {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = voice
+    private func speakTTS(_ text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        Speech.shared.activateSession()
+
+        let utterance = AVSpeechUtterance(string: trimmed)
+        utterance.voice = VoiceCatalog.utteranceVoice()
         utterance.rate = Float(min(max(rate, 0.30), 0.60))
         utterance.pitchMultiplier = 1.0
         utterance.preUtteranceDelay = 0
@@ -211,24 +243,69 @@ final class SpeechLoop: NSObject, ObservableObject {
             Speech.recordEngine("system")
             // 系统 TTS 偶尔不给 didFinish（切后台、语音包异常）。
             // 兜一个上限，宁可少等一拍，也不能让整个循环永久挂在这里。
-            armTimeout(seconds: min(20.0, Double(text.count) * 0.45 + 3.0), epoch: epoch)
+            armTimeout(seconds: min(20.0, Double(trimmed.count) * 0.45 + 3.0), epoch: epoch, target: .tts)
         }
+    }
+
+    /// 播包里的音频。播起来返回 true；文件损坏返回 false，由调用方继续往下走。
+    private func playLocal(_ url: URL) async -> Bool {
+        guard let player = try? AVAudioPlayer(contentsOf: url) else { return false }
+        Speech.shared.activateSession()
+        player.enableRate = true
+        player.rate = Float(min(max(0.55 + rate * 0.6, 0.5), 1.2))
+        player.delegate = self
+        player.prepareToPlay()
+        guard player.play() else { return false }
+        audioPlayer = player
+        Speech.recordEngine("voicepack")
+
+        speakEpoch += 1
+        let epoch = speakEpoch
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            audioPending = continuation
+            let seconds = min(60.0, player.duration / Double(max(player.rate, 0.1)) + 2.0)
+            armTimeout(seconds: seconds, epoch: epoch, target: .local)
+        }
+        return true
+    }
+
+    /// 超时兜底的放行目标：合成器/服务器音频走 `pending`，本地包音频走 `audioPending`。
+    private enum TimeoutTarget {
+        case tts
+        case local
     }
 
     /// 超时兜底：只放行自己这一轮（epoch 对得上才放行）。
-    private func armTimeout(seconds: Double, epoch: Int) {
+    private func armTimeout(seconds: Double, epoch: Int, target: TimeoutTarget) {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard let self, self.speakEpoch == epoch else { return }
-            self.finishCurrent()
+            switch target {
+            case .tts: self.finishCurrent()
+            case .local: self.finishAudio()
+            }
         }
     }
 
-    /// 幂等：多个来源（didFinish / didCancel / 兜底超时）都会调，只放行一次。
+    /// 幂等：didFinish / didCancel / 兜底超时都会调，只放行一次。
     private func finishCurrent() {
         guard let continuation = pending else { return }
         pending = nil
         continuation.resume()
+    }
+
+    private func finishAudio() {
+        guard let continuation = audioPending else { return }
+        audioPending = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        continuation.resume()
+    }
+
+    /// AVAudioPlayer 的回调不分本地包音频还是服务器音频；
+    /// 同一时刻只播一个，看哪个 continuation 在等就放行哪个。
+    private func finishAudioPlayback() {
+        if audioPending != nil { finishAudio() } else { finishCurrent() }
     }
 }
 
@@ -252,10 +329,10 @@ extension SpeechLoop: AVSpeechSynthesizerDelegate {
 extension SpeechLoop: AVAudioPlayerDelegate {
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.finishCurrent() }
+        Task { @MainActor in self.finishAudioPlayback() }
     }
 
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        Task { @MainActor in self.finishCurrent() }
+        Task { @MainActor in self.finishAudioPlayback() }
     }
 }
