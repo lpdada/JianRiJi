@@ -210,6 +210,8 @@ final class SpeechLoop: NSObject, ObservableObject {
     private func playServerAudio(_ data: Data) async {
         speakEpoch += 1
         let epoch = speakEpoch
+        finishCurrent()          // 覆盖前先把上一个放行，避免 continuation 泄漏
+        finishAudio()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             do {
                 let player = try AVAudioPlayer(data: data)
@@ -243,6 +245,8 @@ final class SpeechLoop: NSObject, ObservableObject {
 
         speakEpoch += 1
         let epoch = speakEpoch
+        finishCurrent()          // 覆盖前先把上一个放行，避免 continuation 泄漏
+        finishAudio()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             pending = continuation
             synthesizer.speak(utterance)
@@ -267,6 +271,8 @@ final class SpeechLoop: NSObject, ObservableObject {
 
         speakEpoch += 1
         let epoch = speakEpoch
+        finishCurrent()          // 覆盖前先把上一个放行，避免 continuation 泄漏
+        finishAudio()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             audioPending = continuation
             let seconds = min(60.0, player.duration / Double(max(player.rate, 0.1)) + 2.0)
@@ -281,11 +287,14 @@ final class SpeechLoop: NSObject, ObservableObject {
         case local
     }
 
-    /// 超时兜底：只放行自己这一轮（epoch 对得上才放行）。
+    private var timeoutTask: Task<Void, Never>?
+
+    /// 超时兜底：只放行自己这一轮（epoch 对得上才放行）。只保留最新一个超时任务。
     private func armTimeout(seconds: Double, epoch: Int, target: TimeoutTarget) {
-        Task { @MainActor [weak self] in
+        timeoutTask?.cancel()
+        timeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard let self, self.speakEpoch == epoch else { return }
+            guard !Task.isCancelled, let self, self.speakEpoch == epoch else { return }
             switch target {
             case .tts: self.finishCurrent()
             case .local: self.finishAudio()

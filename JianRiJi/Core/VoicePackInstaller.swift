@@ -74,6 +74,8 @@ enum VoicePackInstaller {
 
     static let magic = Data("JRJP".utf8)
     static let supportedVersion = 1
+    /// 单个语音包体积上限（防 OOM / 磁盘写爆）。
+    static let maxPackBytes: Int64 = 512 * 1024 * 1024   // 512 MB
 
     // MARK: - 解析
 
@@ -196,17 +198,27 @@ enum VoicePackInstaller {
 // MARK: - 下载
 
 /// 带进度的下载器：`URLSession.download(for:)` 没有进度回调，这里自己实现。
+@unchecked Sendable
 final class VoicePackDownloader: NSObject {
 
     private var continuation: CheckedContinuation<URL, Error>?
     private var onProgress: ((Double) -> Void)?
     private var destination: URL?
-    private lazy var session: URLSession = URLSession(
-        configuration: .default,
-        delegate: self,
+    private var session: URLSession?
+
+    private func makeSession() -> URLSession {
+        if let session { return session }
         // 回调统一放主线程：进度和 continuation 都在这条线上改，不用再加锁。
-        delegateQueue: .main
-    )
+        let created = URLSession(
+            configuration: .default,
+            delegate: self,
+            delegateQueue: .main
+        )
+        session = created
+        return created
+    }
+
+    deinit { session?.invalidateAndCancel() }
 
     func download(
         from url: URL,
@@ -219,7 +231,7 @@ final class VoicePackDownloader: NSObject {
 
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            let task = session.downloadTask(with: url)
+            let task = makeSession().downloadTask(with: url)
             task.resume()
         }
     }
@@ -245,6 +257,11 @@ extension VoicePackDownloader: URLSessionDownloadDelegate {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
+        if totalBytesWritten > VoicePackInstaller.maxPackBytes {
+            downloadTask.cancel()
+            finish(.failure(VoicePackFormatError.truncatedPayload))
+            return
+        }
         guard totalBytesExpectedToWrite > 0 else { return }
         let value = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
         onProgress?(min(1, value))
@@ -342,6 +359,10 @@ final class VoicePackStore: ObservableObject {
         guard busyPackID == nil else { return }
         errorText = nil
         status = nil
+        guard pack.bytes > 0, pack.bytes <= VoicePackInstaller.maxPackBytes else {
+            errorText = "语音包体积异常（\(pack.bytes) B），已拒绝下载。"
+            return
+        }
         guard let base = normalizedEndpoint() else {
             errorText = "先填语音包地址。"
             return
@@ -363,8 +384,10 @@ final class VoicePackStore: ObservableObject {
                 self?.progress = value
             }
             status = "正在安装…"
-            let data = try Data(contentsOf: fileURL)
-            let count = try VoicePackInstaller.install(data, packID: pack.id)
+            let count = try await Task.detached(priority: .utility) {
+                let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+                return try VoicePackInstaller.install(data, packID: pack.id)
+            }.value
             try? FileManager.default.removeItem(at: fileURL)
             status = "已安装 \(pack.title)：\(count) 条读音。"
             refreshInstalled()

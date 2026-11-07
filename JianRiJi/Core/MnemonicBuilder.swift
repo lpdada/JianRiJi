@@ -169,13 +169,15 @@ enum MnemonicBuilder {
 /// AI 记忆技巧的本地缓存 + 请求拼装。只在用户点「AI 深化」时才会真的发请求。
 enum MnemonicAI {
 
-    private static func cacheKey(for word: Word) -> String {
-        "classic.mnemonic.ai.\(word.id)"
-    }
-
     static func cached(for word: Word) -> [MnemonicLine] {
-        guard let raw = UserDefaults.standard.string(forKey: cacheKey(for: word)),
-              !raw.isEmpty else { return [] }
+        // 先读文件，读不到再试一次旧的 UserDefaults（迁移期兼容），命中就顺手搬过去。
+        var raw = (try? String(contentsOf: MnemonicFiles.fileURL(forWordID: word.id), encoding: .utf8)) ?? ""
+        if raw.isEmpty, let legacy = legacyCache(for: word) {
+            raw = legacy
+            storeRaw(legacy, for: word)
+            UserDefaults.standard.removeObject(forKey: legacyKey(for: word))
+        }
+        guard !raw.isEmpty else { return [] }
         return raw
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
@@ -187,12 +189,23 @@ enum MnemonicAI {
 
     static func store(_ lines: [MnemonicLine], for word: Word) {
         guard !lines.isEmpty else { return }
-        let raw = lines.map(\.text).joined(separator: "\n")
-        UserDefaults.standard.set(raw, forKey: cacheKey(for: word))
+        storeRaw(lines.map(\.text).joined(separator: "\n"), for: word)
     }
 
     static func clear(for word: Word) {
-        UserDefaults.standard.removeObject(forKey: cacheKey(for: word))
+        try? FileManager.default.removeItem(at: MnemonicFiles.fileURL(forWordID: word.id))
+        UserDefaults.standard.removeObject(forKey: legacyKey(for: word))
+    }
+
+    private static func storeRaw(_ raw: String, for word: Word) {
+        try? raw.write(to: MnemonicFiles.fileURL(forWordID: word.id), atomically: true, encoding: .utf8)
+    }
+
+    private static func legacyKey(for word: Word) -> String { "classic.mnemonic.ai.\(word.id)" }
+
+    private static func legacyCache(for word: Word) -> String? {
+        let raw = UserDefaults.standard.string(forKey: legacyKey(for: word))
+        return (raw?.isEmpty ?? true) ? nil : raw
     }
 
     static func prompt(for word: Word) -> (system: String, user: String) {

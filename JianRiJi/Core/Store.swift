@@ -359,6 +359,7 @@ final class Store: ObservableObject {
             self.normalizeBook()
             self.ensureCards()
             self.invalidateAllCaches()
+            MnemonicMigration.runIfNeeded()
             self.isReady = true
             self.objectWillChange.send()
         }

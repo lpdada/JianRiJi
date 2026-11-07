@@ -7,7 +7,9 @@ import Foundation
 /// 200 返回 audio/mpeg；GET {base}/health 测活；单次最多 1000 字，超时 15 秒。
 /// 地址留空表示只用系统语音。本接口不需要 Key。
 final class ServerTTS {
-    static let defaultBaseURL = "https://asr.ysloving.com"
+    /// 默认空字符串 = 不联网。用户显式填写才启用服务器合成。
+    /// 示例（自建 Edge TTS 代理）：`https://tts.example.com` 或局域网 `http://192.168.1.10:8000`
+    static let defaultBaseURL = ""
     static let nanamiVoiceID = "ja-JP-NanamiNeural"
     static let maxTextLength = 1_000
     static let defaultTimeout: Double = 15

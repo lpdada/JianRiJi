@@ -26,12 +26,30 @@ enum BooksDestination: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var store: Store
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var brainwash = BrainwashStore()
     @State private var selection: RootTab = .home
     @State private var homePath = NavigationPath()
     @State private var booksPath = NavigationPath()
 
     var body: some View {
+        Group {
+            if store.isReady {
+                tabs
+            } else {
+                LaunchPlaceholder()
+            }
+        }
+        .tint(AppTheme.primary)
+        .environmentObject(brainwash)
+        .task { store.bootstrap() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { store.flush() }
+        }
+    }
+
+    @ViewBuilder
+    private var tabs: some View {
         TabView(selection: $selection) {
             NavigationStack(path: $homePath) {
                 HomeDashboardView(
@@ -78,11 +96,6 @@ struct RootView: View {
             SettingsView()
                 .tabItem { Label("我的", systemImage: "person.fill") }
                 .tag(RootTab.settings)
-        }
-        .tint(AppTheme.primary)
-        .environmentObject(brainwash)
-        .task {
-            store.bootstrap()
         }
     }
 

@@ -10,8 +10,9 @@ import Foundation
 /// 3. 有没有真人录音。`VoicePack` 里存了同 key 的音频就直接播音频；
 ///    没有包音频时走服务器合成 Nanami（和包里同一个声音），服务器失败才走系统语音。
 /// 任何一步失败都静默走下一层，不弹窗。
+@MainActor
 final class Speech: NSObject {
-    static let shared = Speech()
+    @MainActor static let shared = Speech()
 
     /// 上次实际用的引擎，设置页的「上次」行读它。取值：voicepack / server / system。
     static let lastEngineKey = "tts.lastEngine"
@@ -21,7 +22,7 @@ final class Speech: NSObject {
     }
 
     /// 服务器合成地址，空 = 跳过服务器。默认填用户自己的代理。
-    var serverBaseURL: String = ServerTTS.defaultBaseURL
+    var serverBaseURL: String = ServerTTS.defaultBaseURL   // 现在是 ""
 
     private let synthesizer = AVSpeechSynthesizer()
     private var audioPlayer: AVAudioPlayer?
@@ -33,14 +34,46 @@ final class Speech: NSObject {
     private var fallbackRate = 0.45
     private var workTask: Task<Void, Never>?
     private var watchdogTask: Task<Void, Never>?
+    private var observers: [NSObjectProtocol] = []
 
     private override init() {
         super.init()
+        installAudioSessionObservers()
         #if DEBUG
         if VoiceCatalog.hasNoJapaneseVoice {
             print("[JianRiJi] 系统里没有日语语音，去 设置 → 辅助功能 → 朗读内容 → 声音 → 日语 下一个。")
         }
         #endif
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// 来电 / 插拔耳机后音频会话会被系统 deactivate，不重新激活后续朗读全部无声。
+    private func installAudioSessionObservers() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            if type == .ended {
+                self.sessionConfigured = false
+                self.activateSession()
+            }
+        })
+        observers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            self?.sessionConfigured = false
+            self?.activateSession()
+        })
     }
 
     var hasJapaneseVoice: Bool { !VoiceCatalog.hasNoJapaneseVoice }
@@ -229,7 +262,7 @@ final class Speech: NSObject {
 }
 
 extension Speech: AVAudioPlayerDelegate {
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in
             guard let self, self.player === player else { return }
             self.watchdogTask?.cancel()
@@ -238,7 +271,7 @@ extension Speech: AVAudioPlayerDelegate {
         }
     }
 
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor [weak self] in
             guard let self, self.player === player else { return }
             self.watchdogTask?.cancel()
