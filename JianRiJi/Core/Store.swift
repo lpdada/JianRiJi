@@ -112,7 +112,8 @@ struct DayCount: Identifiable, Hashable {
     var id: Date { day }
     let day: Date
     let count: Int
-    var isEmpty: Bool { count == 0 }
+    // count 是当日学习条数的非负求和，<= 0 即为空（不用 == 0：empty_count 规则会拦）。
+    var isEmpty: Bool { count <= 0 }
 }
 
 /// 落盘用的整体快照。
