@@ -26,6 +26,7 @@ enum BooksDestination: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var store: Store
+    @StateObject private var cloud = CloudSync()
     @StateObject private var brainwash = BrainwashStore()
     @State private var selection: RootTab = .home
     @State private var homePath = NavigationPath()
@@ -81,8 +82,10 @@ struct RootView: View {
         }
         .tint(AppTheme.primary)
         .environmentObject(brainwash)
+        .environmentObject(cloud)
         .task {
             store.bootstrap()
+            cloud.attach(store)
         }
     }
 

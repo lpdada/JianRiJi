@@ -5,9 +5,39 @@ import Security
 /// 每个厂商一个条目：service 固定，account 是厂商 rawValue，换厂商就用对应厂商的 Key。
 enum KeychainHelper {
     private static let service = "com.lpdada.jianriji.ai"
+    /// 云端登录 token 的条目，与 AI 的 Key 分开存。
+    private static let cloudService = "com.lpdada.jianriji.cloud"
+    private static let cloudTokenAccount = "token"
 
     @discardableResult
     static func save(_ key: String, account: String) -> Bool {
+        save(key, account: account, service: service)
+    }
+
+    static func read(account: String) -> String? {
+        read(account: account, service: service)
+    }
+
+    static func delete(account: String) {
+        delete(account: account, service: service)
+    }
+
+    /// 云端登录 token：只进 Keychain，不进学习存档、不进日志。
+    @discardableResult
+    static func saveCloudToken(_ token: String) -> Bool {
+        save(token, account: cloudTokenAccount, service: cloudService)
+    }
+
+    static func readCloudToken() -> String? {
+        read(account: cloudTokenAccount, service: cloudService)
+    }
+
+    static func deleteCloudToken() {
+        delete(account: cloudTokenAccount, service: cloudService)
+    }
+
+    @discardableResult
+    private static func save(_ key: String, account: String, service: String) -> Bool {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         let data = Data(trimmed.utf8)
@@ -33,7 +63,7 @@ enum KeychainHelper {
         return false
     }
 
-    static func read(account: String) -> String? {
+    private static func read(account: String, service: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -52,7 +82,7 @@ enum KeychainHelper {
         return key
     }
 
-    static func delete(account: String) {
+    private static func delete(account: String, service: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

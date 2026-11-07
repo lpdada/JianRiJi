@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var store: Store
+    @EnvironmentObject private var cloud: CloudSync
 
     @AppStorage("tts.lastEngine") private var lastEngine = "system"
 
@@ -89,6 +90,50 @@ struct SettingsView: View {
                     Text("朗读")
                 } footer: {
                     Text("朗读按语音包、服务器、系统语音的顺序来，失败逐层退回；地址清空则跳过服务器。")
+                }
+
+                Section {
+                    TextField("服务器地址，清空则关闭云功能", text: $store.settings.cloudBaseURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .keyboardType(.URL)
+
+                    NavigationLink {
+                        LoginView()
+                    } label: {
+                        HStack {
+                            Text("账号")
+                            Spacer()
+                            Text(cloud.account?.phone ?? "未登录")
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+
+                    NavigationLink {
+                        TeamView()
+                    } label: {
+                        HStack {
+                            Text("组队打卡")
+                            Spacer()
+                            Text(cloud.team?.name ?? "未组队")
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+
+                    HStack {
+                        Button(cloud.syncing ? "正在同步…" : "立即同步") {
+                            Task { await cloud.syncNow() }
+                        }
+                        .disabled(!cloud.isConfigured || cloud.account == nil || cloud.syncing)
+                        Spacer()
+                        Text(cloud.syncStatus)
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                    }
+                } header: {
+                    Text("账号与同步")
+                } footer: {
+                    Text("登录后进度每 60 秒自动同步一次，换设备先拉云端再学。地址清空则不同步；登录 token 只存在本机 Keychain。")
                 }
 
                 Section {

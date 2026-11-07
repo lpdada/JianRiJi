@@ -23,10 +23,13 @@ struct AppSettings: Codable, Equatable {
     var aiBaseURL: String = ""
     /// 朗读服务器地址，空 = 只用系统语音。旧存档缺这个键时取默认值。
     var ttsServerURL: String = ServerTTS.defaultBaseURL
+    /// 云端服务器地址（登录 / 云同步 / 组队打卡），空 = 功能关闭。
+    /// 旧存档缺这个键时取空，不发任何请求。
+    var cloudBaseURL: String = ""
 
     enum CodingKeys: String, CodingKey {
         case dailyGoal, reviewLimit, showRomaji, autoSpeak, speechRate, deckFilter
-        case aiVendor, aiModel, aiBaseURL, ttsServerURL
+        case aiVendor, aiModel, aiBaseURL, ttsServerURL, cloudBaseURL
     }
 
     init() {}
@@ -43,6 +46,7 @@ struct AppSettings: Codable, Equatable {
         aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
         aiBaseURL = try c.decodeIfPresent(String.self, forKey: .aiBaseURL) ?? ""
         ttsServerURL = try c.decodeIfPresent(String.self, forKey: .ttsServerURL) ?? ServerTTS.defaultBaseURL
+        cloudBaseURL = try c.decodeIfPresent(String.self, forKey: .cloudBaseURL) ?? ""
     }
 }
 
@@ -401,6 +405,26 @@ final class Store: ObservableObject {
         cards.removeAll()
         log.removeAll()
         favorites.removeAll()
+        ensureCards()
+        persist()
+    }
+
+    // MARK: - 云同步
+
+    /// 当前学习进度的云端快照：只含动过的卡 + 最近 500 条记录 + 收藏 + 学会语法。
+    /// 不含词库本身、不含设置（设置是每台设备自己的）。
+    func cloudSnapshot() -> CloudProgressPayload {
+        CloudPayload.build(cards: cards, log: log, favorites: favorites, learnedGrammar: learnedGrammar)
+    }
+
+    /// 把云端进度合并进来：卡片按最后复习时间取新，记录去重，收藏与语法取并集。
+    /// 合并完补齐新词卡并落盘。
+    func applyCloudSnapshot(_ payload: CloudProgressPayload) {
+        let merged = CloudPayload.merge(local: cloudSnapshot(), cloud: payload)
+        cards = merged.cards
+        log = merged.log
+        favorites = Set(merged.favorites)
+        learnedGrammar = Set(merged.learnedGrammar)
         ensureCards()
         persist()
     }
