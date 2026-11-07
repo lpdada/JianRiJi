@@ -6,31 +6,50 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 同一个分支连续推送时取消旧跑，省 runner 也避免结果互相覆盖。
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    name: Lint (SwiftLint)
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: SwiftLint
+        run: swiftlint lint --quiet --reporter github-actions-logging
+
   build:
     name: Build & Test (iOS Simulator)
+    needs: lint
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16 if available
+      - name: Select newest Xcode
         run: |
           set -euo pipefail
-          APP=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1 || true)
-          if [ -n "$APP" ]; then
+          APP=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "${APP:-}" ]; then
             sudo xcode-select -s "$APP"
             echo "selected $APP"
           else
-            echo "no Xcode 16 app found, keeping runner default"
+            echo "no standalone Xcode app found, keeping runner default"
           fi
+          xcodebuild -version
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          brew install xcodegen xcbeautify
 
       - name: Generate project
         run: xcodegen generate
@@ -40,13 +59,14 @@ jobs:
         run: |
           set -euo pipefail
           UDID=$(xcrun simctl list devices available -j \
-            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
-          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+            | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[]
+                      | select(.name | test("^iPhone"))][0].udid')
+          if [ -z "${UDID:-}" ] || [ "$UDID" = "null" ]; then
             echo "::error::这台 runner 上没有可用的 iPhone 模拟器"
             exit 1
           fi
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-          echo "using simulator $UDID"
+          xcrun simctl list devices available | grep -F "$UDID" || true
 
       - name: Build
         run: |
@@ -56,7 +76,23 @@ jobs:
             -scheme JianRiJi \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify
+
+      # 静态分析抓的是「能编过但确实是 bug」的路径（空指针、泄漏、未初始化）。
+      # 它不进测试流程，但每次 PR 跑一遍成本很低。
+      - name: Static analyze
+        run: |
+          set -o pipefail
+          xcodebuild analyze \
+            -project JianRiJi.xcodeproj \
+            -scheme JianRiJi \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -configuration Debug \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify
 
       - name: Test
         run: |
@@ -66,4 +102,31 @@ jobs:
             -scheme JianRiJi \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath DerivedData \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify
+
+      # 覆盖率门槛：只卡「核心层掉到 25% 以下」这一种情况，避免为了凑数字写废测试。
+      - name: Report coverage
+        run: |
+          set -euo pipefail
+          xcrun xccov view --report TestResults.xcresult || true
+          PCT=$(xcrun xccov view --report --json TestResults.xcresult \
+            | jq -r '[.targets[] | select(.name | test("JianRiJi.app"))][0].lineCoverage // empty' \
+            | awk '{ printf "%.2f", $1 * 100 }')
+          if [ -z "${PCT:-}" ]; then
+            echo "::warning::拿不到覆盖率数字，跳过门槛检查"
+            exit 0
+          fi
+          echo "JianRiJi line coverage: ${PCT}%"
+          awk -v p="$PCT" 'BEGIN { if (p + 0 < 25) { printf "::error::核心层覆盖率 %.1f%% 低于 25%% 门槛\n", p; exit 1 } }'
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          retention-days: 7
+          if-no-files-found: warn

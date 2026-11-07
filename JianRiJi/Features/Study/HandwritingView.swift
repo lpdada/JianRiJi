@@ -4,10 +4,19 @@ import UIKit
 
 /// 手写输入：看中文意思，在画布上写出日文词形，用 Vision 识别并判分。
 /// 只处理内存里的 UIImage，不用相机、不拍照、不存图。
-/// 识别用 Vision VNRecognizeTextRequest，日语 ja-JP、accurate 级别。
+///
+/// 修了四处：
+///  1. **画布写死 320×320**。iPhone SE（320pt 宽）减去左右 16pt padding 只剩 288pt，
+///     画布会横向溢出。改成按可用宽度自适应，最大 340。
+///  2. **只取识别结果的第一个候选**。手写假名常被认成形近字，取 `topCandidates(3)`，
+///     任一命中就算对。
+///  3. **完全认不出来也按「错」处理并扣记忆分**。识别为空意味着「机器没看懂」，
+///     不是「你写错了」——这时不判分，让用户擦掉重写。
+///  4. 每次切词都 `scopedWords.shuffled()`（10660 词全量重排），改成维护一个 pool。
 struct HandwritingView: View {
     @EnvironmentObject private var store: Store
 
+    @State private var pool: [Word] = []
     @State private var target: Word?
     @State private var strokes: [[CGPoint]] = []
     @State private var currentStroke: [CGPoint] = []
@@ -16,11 +25,9 @@ struct HandwritingView: View {
     @State private var correct = 0
     @State private var total = 0
     @State private var recognizing = false
+    @State private var canvasSide: CGFloat = 320
 
-    enum Verdict { case idle, right, wrong }
-
-    /// 画布固定尺寸，渲染识别图时用同一尺寸，避免坐标换算出错。
-    private let canvasSize = CGSize(width: 320, height: 320)
+    enum Verdict { case idle, right, wrong, unreadable }
 
     var body: some View {
         ScrollView {
@@ -29,13 +36,13 @@ struct HandwritingView: View {
                 promptCard
                 canvasCard
                 actionRow
-                if verdict != .idle { feedback }
+                feedback
                 footer
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .background(Theme.paper.ignoresSafeArea())
+        .background(AppTheme.bgMint.ignoresSafeArea())
         .navigationTitle("手写")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -47,7 +54,7 @@ struct HandwritingView: View {
         HStack {
             Text(total == 0 ? "还没开始" : "\(correct) / \(total) 正确")
                 .font(.caption)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
             Spacer()
             Button {
                 if let word = target {
@@ -58,7 +65,7 @@ struct HandwritingView: View {
                     .font(.caption)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Theme.accent)
+            .foregroundStyle(AppTheme.primary)
         }
     }
 
@@ -66,44 +73,56 @@ struct HandwritingView: View {
         VStack(spacing: 6) {
             Text("写出下面这个词")
                 .font(.footnote)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
             Text(target?.meaning ?? "—")
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
+                .foregroundStyle(AppTheme.ink)
             Text("写词形也可以，写假名读音也可以")
                 .font(.caption2)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
-        .paperCard(padding: 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(AppTheme.card)
+        )
     }
 
     private var canvasCard: some View {
         VStack(spacing: 10) {
-            Canvas { context, _ in
-                for stroke in strokes + (currentStroke.isEmpty ? [] : [currentStroke]) {
-                    context.stroke(path(for: stroke), with: .color(.primary), lineWidth: 5)
+            GeometryReader { geo in
+                let side = max(200, geo.size.width)
+                Canvas { context, _ in
+                    for stroke in strokes + (currentStroke.isEmpty ? [] : [currentStroke]) {
+                        context.stroke(path(for: stroke), with: .color(.black), lineWidth: 5)
+                    }
                 }
-            }
-            .frame(width: canvasSize.width, height: canvasSize.height)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        currentStroke.append(value.location)
-                    }
-                    .onEnded { _ in
-                        if !currentStroke.isEmpty {
-                            strokes.append(currentStroke)
-                            currentStroke = []
+                .frame(width: side, height: side)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(AppTheme.hairline, lineWidth: 1)
+                )
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard verdict == .idle || verdict == .unreadable else { return }
+                            currentStroke.append(value.location)
                         }
-                    }
-            )
+                        .onEnded { _ in
+                            if !currentStroke.isEmpty {
+                                strokes.append(currentStroke)
+                                currentStroke = []
+                            }
+                        }
+                )
+                .onAppear { canvasSide = side }
+                .onChange(of: side) { canvasSide = $0 }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 340)
 
             HStack(spacing: 10) {
                 Button {
@@ -114,14 +133,18 @@ struct HandwritingView: View {
                 } label: {
                     Text("擦掉重写")
                 }
-                .buttonStyle(GhostButtonStyle(tint: Theme.muted))
+                .buttonStyle(GhostButtonStyle(tint: AppTheme.ink3))
                 Spacer()
                 Text("写完点「识别判分」")
                     .font(.caption2)
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(AppTheme.ink3)
             }
         }
-        .paperCard(padding: 14)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(AppTheme.card)
+        )
     }
 
     private var actionRow: some View {
@@ -132,49 +155,62 @@ struct HandwritingView: View {
                 Text(recognizing ? "识别中…" : "识别判分")
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(strokes.isEmpty || recognizing || verdict != .idle)
+            .disabled(strokes.isEmpty || recognizing || verdict == .right || verdict == .wrong)
 
             Button {
                 next()
             } label: {
                 Text("下一词")
             }
-            .buttonStyle(GhostButtonStyle(tint: Theme.accent))
+            .buttonStyle(GhostButtonStyle(tint: AppTheme.primary))
         }
     }
 
+    @ViewBuilder
     private var feedback: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if verdict == .right {
+            switch verdict {
+            case .idle:
+                EmptyView()
+
+            case .right:
                 Text("对了：\(target?.term ?? "")  ·  \(target?.reading ?? "")")
                     .font(.footnote)
-                    .foregroundStyle(Theme.accent)
-            } else {
+                    .foregroundStyle(AppTheme.success)
+
+            case .unreadable:
+                Text("没认出你写的字。擦掉重写一次，字写得大一点会更准。")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.warning)
+                Text("这一次不计分、不动记忆进度。")
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.ink3)
+
+            case .wrong:
                 Text("识别成「\(recognized ?? "")」，正确答案：\(target?.term ?? "")  ·  \(target?.reading ?? "")")
                     .font(.footnote)
-                    .foregroundStyle(Color(red: 0.78, green: 0.32, blue: 0.28))
+                    .foregroundStyle(AppTheme.danger)
+                Text("手写识别认的是字形，写得潦草、笔画连在一起都可能认错；这一次不计入记忆进度。")
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.ink3)
             }
-            Text("手写识别认的是字形，写得潦草、笔画连在一起都可能认错，认错不代表你没记住。")
-                .font(.caption2)
-                .foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
-        Text("手写会推进记忆进度：识别对按「记得」，识别错按「忘了」。")
+        Text("手写答对会按「记得」推进记忆进度；认错或写错只提示，不扣分。")
             .font(.caption2)
-            .foregroundStyle(Theme.muted)
+            .foregroundStyle(AppTheme.ink3)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - 逻辑
+    // MARK: - 绘制
 
     private func path(for stroke: [CGPoint]) -> Path {
         var path = Path()
         guard let first = stroke.first else { return path }
         if stroke.count == 1 {
-            // 单点一笔：画个小圆，不然 Canvas 里看不见。
             path.addEllipse(in: CGRect(x: first.x - 2.5, y: first.y - 2.5, width: 5, height: 5))
             return path
         }
@@ -187,12 +223,13 @@ struct HandwritingView: View {
 
     /// 把笔画渲染成内存里的 UIImage，不落盘、不走相机。
     private func renderImage() -> UIImage? {
+        let side = max(200, canvasSide)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
-        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
         return renderer.image { context in
             UIColor.white.setFill()
-            context.fill(CGRect(origin: .zero, size: canvasSize))
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
             UIColor.black.setStroke()
             let cg = context.cgContext
             cg.setLineWidth(10)
@@ -213,21 +250,28 @@ struct HandwritingView: View {
         }
     }
 
+    // MARK: - 识别
+
     private func recognize() {
-        guard let word = target, verdict == .idle, !strokes.isEmpty,
-              let image = renderImage(), let cgImage = image.cgImage else { return }
+        guard let word = target,
+              verdict != .right, verdict != .wrong,
+              !strokes.isEmpty,
+              let image = renderImage(),
+              let cgImage = image.cgImage else { return }
+
         recognizing = true
         recognized = nil
 
         let request = VNRecognizeTextRequest { request, _ in
-            let text = request.results?
+            // 取前 3 个候选：手写假名常被认成形近字，只取第一个太苛刻。
+            let candidates = (request.results ?? [])
                 .compactMap { $0 as? VNRecognizedTextObservation }
-                .compactMap { $0.topCandidates(1).first?.string }
-                .joined()
-                ?? ""
+                .flatMap { observation in
+                    observation.topCandidates(3).map(\.string)
+                }
             DispatchQueue.main.async {
                 self.recognizing = false
-                self.finishRecognized(text, for: word)
+                self.finishRecognized(candidates, for: word)
             }
         }
         request.recognitionLanguages = ["ja-JP"]
@@ -240,23 +284,48 @@ struct HandwritingView: View {
         }
     }
 
-    private func finishRecognized(_ raw: String, for word: Word) {
-        let cleaned = raw
+    private func clean(_ text: String) -> String {
+        text
             .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "　", with: "")
+            .replacingOccurrences(of: "\u{3000}", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        recognized = cleaned
-        // 词形和读音都算对：写汉字词形对，写假名读音也对。
-        let isRight = !cleaned.isEmpty && (cleaned == word.term || cleaned == word.reading)
-        verdict = isRight ? .right : .wrong
-        total += 1
-        if isRight { correct += 1 }
-        store.grade(word: word, grade: isRight ? .good : .again)
+    }
+
+    private func finishRecognized(_ candidates: [String], for word: Word) {
+        let cleaned = candidates.map(clean).filter { !$0.isEmpty }
+        recognized = cleaned.first
+
+        // 一个都没认出来：机器没看懂，不是用户写错。不判分。
+        guard !cleaned.isEmpty else {
+            verdict = .unreadable
+            return
+        }
+
+        let isRight = cleaned.contains { text in
+            if text == word.term || text == word.reading { return true }
+            // 多字词允许「识别结果里含目标词」（连笔多写一笔的情况）。
+            if word.term.count >= 2, text.contains(word.term) { return true }
+            // 也允许读假名时多认了一个假名。
+            if word.reading.count >= 2, text.contains(word.reading) { return true }
+            return false
+        }
+
+        if isRight {
+            total += 1
+            correct += 1
+            store.grade(word: word, grade: .good)
+            verdict = .right
+        } else {
+            // 写错/认错都不写 SRS：手写是输出训练，不该反过来惩罚记忆状态。
+            verdict = .wrong
+        }
     }
 
     private func next() {
-        let pool = store.scopedWords.shuffled()
-        target = pool.first
+        if pool.isEmpty {
+            pool = store.scopedWords.shuffled()
+        }
+        target = pool.popLast()
         strokes = []
         currentStroke = []
         recognized = nil

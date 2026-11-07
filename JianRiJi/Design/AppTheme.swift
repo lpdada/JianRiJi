@@ -1,43 +1,71 @@
 //  AppTheme.swift
-//  简日记 · 2024-11 改版设计 tokens & 通用小组件
-//  对应设计稿: home-and-books.png / study-and-brainwash.png
+//  简日记 · 设计 tokens & 通用小组件
+//
+//  2024-11 改版引入了这套新 token，但当时所有颜色都是写死的十六进制值：
+//  `AppTheme.card = .white`、`AppTheme.bgMint = 0xE9F2EE`。
+//  结果是**新界面完全没有暗色模式**——首页、词本、学习页在夜间模式下依旧一片浅绿白，
+//  而同期的旧界面（ReviewView 等，走 Theme.swift 的动态色）却能正常变暗。
+//  一个 App 里两种夜间行为，是用户最容易察觉的「不专业」。
+//
+//  这里把每个 token 改成 light/dark 双值动态色，**API 名字全部保持不变**，
+//  调用方一行都不用改，全局获得暗色支持。
 
 import SwiftUI
+import UIKit
 
-// MARK: - 设计 tokens（与设计稿逐像素对齐）
+// MARK: - 设计 tokens
 
 enum AppTheme {
+
     /// 页面渐变浅景底（首页 / 词本 / 学习页背景）
-    static let bgTop = Color(hex: 0xE7EFE9)
-    static let bgBottom = Color(hex: 0xEEF2EE)
+    static let bgTop = dynamic(0xE7EFE9, 0x0F1513)
+    static let bgBottom = dynamic(0xEEF2EE, 0x131A17)
     static var screenGradient: LinearGradient {
         LinearGradient(colors: [bgTop, bgBottom], startPoint: .top, endPoint: UnitPoint(x: 0.25, y: 1))
     }
-    /// 洗脑/学习页底部纯色底
-    static let bgMint = Color(hex: 0xE9F2EE)
+    /// 洗脑 / 学习页底部纯色底
+    static let bgMint = dynamic(0xE9F2EE, 0x121A17)
 
     /// 墨绿主色（按钮、选中 chip、大字词条、下划线强调）
-    static let primary = Color(hex: 0x0E6B5A)
-    static let primaryDeep = Color(hex: 0x0C5F50)
-    static let primaryPressed = Color(hex: 0x137A66)
+    /// 暗色下必须提亮：0x0E6B5A 放在 0x121A17 上几乎看不见。
+    static let primary = dynamic(0x0E6B5A, 0x4FC7A8)
+    static let primaryDeep = dynamic(0x0C5F50, 0x3FB89A)
+    static let primaryPressed = dynamic(0x137A66, 0x5FD4B6)
     /// 淡绿底（图标圆底、tag pill、选中 tab 背景）
-    static let primarySoft = Color(hex: 0xDFECE6)
-    static let primarySoftStroke = Color(hex: 0xCFE3DA)
+    static let primarySoft = dynamic(0xDFECE6, 0x1C2A25)
+    static let primarySoftStroke = dynamic(0xCFE3DA, 0x27352F)
 
     /// 文字三档
-    static let ink = Color(hex: 0x1F2A26)
-    static let ink2 = Color(hex: 0x57685F)
-    static let ink3 = Color(hex: 0x93A49B)
+    static let ink = dynamic(0x1F2A26, 0xE8EFEB)
+    static let ink2 = dynamic(0x57685F, 0xA8B8B1)
+    static let ink3 = dynamic(0x93A49B, 0x7C8C85)
 
     /// 卡片与进度条
-    static let card = Color.white
-    static let track = Color(hex: 0xE3EBE6)
-    static let hairline = Color(hex: 0xE7ECE9)
+    static let card = dynamic(0xFFFFFF, 0x1A2220)
+    static let track = dynamic(0xE3EBE6, 0x24302B)
+    static let hairline = dynamic(0xE7ECE9, 0x2A3531)
+
+    /// 语义色。评分、对错、提示都用它们，别在 View 里再写 Color(red:green:blue:)。
+    static let danger = dynamic(0xC75240, 0xE0715F)
+    static let warning = dynamic(0xB88534, 0xD9A64A)
+    static let success = dynamic(0x3D9E78, 0x4FC7A8)
 
     static let cardRadius: CGFloat = 20
     static let heroRadius: CGFloat = 20
     static let tileRadius: CGFloat = 18
 
+    /// 圆角阴影：暗色下阴影几乎不可见，改用描边（见 `cardShadow`）。
+    static func cardShadow(_ radius: CGFloat = 12, opacity: Double = 0.05, y: CGFloat = 4) -> Color {
+        Color.black.opacity(opacity)
+    }
+
+    // MARK: 动态色
+
+    private static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+        })
+    }
 }
 
 // MARK: - 词本封面色（books.json 里 tint: 0~3）
@@ -45,11 +73,11 @@ enum AppTheme {
 extension AppTheme {
     static func coverColor(tint: Int) -> Color {
         switch tint {
-        case 0: return Color(hex: 0x3E8E7E)  // 全部词本 · 青绿
-        case 1: return Color(hex: 0xD8956B)  // 初级 · 杏
-        case 2: return Color(hex: 0xE0564F)  // JLPT/考试 · 红
-        case 3: return Color(hex: 0x5B9BD5)  // 高级/测试 · 蓝
-        default: return Color(hex: 0x3E8E7E)
+        case 0: return dynamic(0x3E8E7E, 0x2E6E62)  // 全部词本 · 青绿
+        case 1: return dynamic(0xD8956B, 0xA87254)  // 初级 · 杏
+        case 2: return dynamic(0xE0564F, 0xAB4640)  // JLPT/考试 · 红
+        case 3: return dynamic(0x5B9BD5, 0x477BA8)  // 高级/测试 · 蓝
+        default: return dynamic(0x3E8E7E, 0x2E6E62)
         }
     }
 }
@@ -90,7 +118,11 @@ struct PillButton<Label: View>: View {
             .foregroundColor(AppTheme.ink2)
             .padding(.horizontal, 16)
             .frame(height: 40)
-            .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.06), radius: 2, x: 0, y: 1))
+            .background(
+                Capsule()
+                    .fill(AppTheme.card)
+                    .shadow(color: AppTheme.cardShadow(2, opacity: 0.06, y: 1), radius: 2, x: 0, y: 1)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -133,8 +165,12 @@ struct BookCoverTile: View {
             RoundedRectangle(cornerRadius: size.height * 0.26, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [AppTheme.coverColor(tint: tint).opacity(0.9), AppTheme.coverColor(tint: tint)],
-                        startPoint: UnitPoint(x: 0.2, y: 0), endPoint: UnitPoint(x: 0.8, y: 1)
+                        colors: [
+                            AppTheme.coverColor(tint: tint).opacity(0.9),
+                            AppTheme.coverColor(tint: tint),
+                        ],
+                        startPoint: UnitPoint(x: 0.2, y: 0),
+                        endPoint: UnitPoint(x: 0.8, y: 1)
                     )
                 )
             Rectangle()
@@ -146,11 +182,11 @@ struct BookCoverTile: View {
             Text(badge)
                 .font(.system(size: size.height * 0.32, weight: .heavy))
                 .foregroundColor(.white)
-                .padding(.leading, 10)
-            , alignment: .center
+                .padding(.leading, 10),
+            alignment: .center
         )
         .frame(width: size.width, height: size.height)
-        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 3)
+        .shadow(color: AppTheme.cardShadow(8, opacity: 0.15, y: 3), radius: 8, x: 0, y: 3)
     }
 }
 
@@ -163,8 +199,13 @@ struct HairlineProgressBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(AppTheme.track)
                 Capsule()
-                    .fill(LinearGradient(colors: [AppTheme.primaryPressed, AppTheme.primary],
-                                         startPoint: .leading, endPoint: .trailing))
+                    .fill(
+                        LinearGradient(
+                            colors: [AppTheme.primaryPressed, AppTheme.primary],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                     .frame(width: max(3, geo.size.width * min(max(progress, 0), 1)))
             }
         }
@@ -181,6 +222,17 @@ extension Color {
             red: Double((hex >> 16) & 0xFF) / 255,
             green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255
+        )
+    }
+}
+
+extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
         )
     }
 }

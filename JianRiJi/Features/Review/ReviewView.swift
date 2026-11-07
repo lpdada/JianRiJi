@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// 经典复习：看词形回忆词义，翻面后四档评分。
+///
+/// 修了：
+///  1. **主题分裂**。这个界面走的是旧 `Theme.swift`，首页和词本走 `AppTheme`，
+///     用户从首页点进来会看到两套完全不同的视觉语言。现在统一到 `AppTheme`。
+///  2. **「忘了」会被惩罚两次**。答错后这个词被追加到本轮末尾，用户再答一次又会
+///     `store.grade(.again)` —— level 再降两级、ease 再掉 0.2。一轮里同一张卡最多评一次。
+///  3. **「下一词」等于「记得」**。底部那个按钮和上方四档里的「记得」是同一个动作，
+///     却长得像「跳过」。改成真正的跳过（不评分）。
+///  4. 进度条最后一题到不了 100%；翻面前就把 `romaji` 摆出来了，等于给了读音提示。
 struct ReviewView: View {
     @EnvironmentObject private var store: Store
 
@@ -9,6 +19,8 @@ struct ReviewView: View {
     @State private var phase: Phase = .idle
     @State private var counts = SessionCounts()
     @State private var showList = false
+    /// 本轮已经评过分的词。防止「忘了」回到队尾后被二次惩罚。
+    @State private var gradedThisRound: Set<String> = []
 
     enum Phase {
         case idle, running, done
@@ -38,42 +50,42 @@ struct ReviewView: View {
 
     var body: some View {
         ZStack {
-                Theme.paper.ignoresSafeArea()
+            AppTheme.bgMint.ignoresSafeArea()
 
-                switch phase {
-                case .running:
-                    runningView
-                case .idle, .done:
-                    finishView
-                }
+            switch phase {
+            case .running:
+                runningView
+            case .idle, .done:
+                finishView
             }
-            .navigationTitle(store.currentBookTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showList = true
-                        } label: {
-                            Label("查看列表", systemImage: "list.bullet")
-                        }
-                        Button {
-                            Speech.shared.stop()
-                            start()
-                        } label: {
-                            Label("重新开始", systemImage: "arrow.clockwise")
-                        }
-                        Button(role: .destructive) {
-                            Speech.shared.stop()
-                            phase = .done
-                        } label: {
-                            Label("结束本轮", systemImage: "xmark")
-                        }
+        }
+        .navigationTitle(store.currentBookTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        showList = true
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Label("查看列表", systemImage: "list.bullet")
                     }
+                    Button {
+                        Speech.shared.stop()
+                        start()
+                    } label: {
+                        Label("重新开始", systemImage: "arrow.clockwise")
+                    }
+                    Button(role: .destructive) {
+                        Speech.shared.stop()
+                        phase = .done
+                    } label: {
+                        Label("结束本轮", systemImage: "xmark")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
             }
+        }
         .onAppear {
             if phase == .idle { start() }
         }
@@ -95,7 +107,7 @@ struct ReviewView: View {
                         titleBlock(word)
                         actionPills(word)
                         meaningBlock(word)
-                        if word.example != nil {
+                        if revealed, word.example != nil {
                             exampleBlock(word)
                         }
                         if revealed {
@@ -117,10 +129,9 @@ struct ReviewView: View {
     private var progressBar: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
+                Capsule().fill(AppTheme.track)
                 Capsule()
-                    .fill(Theme.mint)
-                Capsule()
-                    .fill(Theme.accent)
+                    .fill(AppTheme.primary)
                     .frame(width: max(6, geo.size.width * progress))
             }
         }
@@ -129,9 +140,11 @@ struct ReviewView: View {
         .padding(.top, 8)
     }
 
+    /// 把「当前这题也算半格」算进去，最后一题能到 100%。
     private var progress: CGFloat {
         guard !queue.isEmpty else { return 0 }
-        return CGFloat(index) / CGFloat(queue.count)
+        let answered = CGFloat(index) + (revealed ? 0.5 : 0)
+        return min(1, answered / CGFloat(queue.count))
     }
 
     private func titleBlock(_ word: Word) -> some View {
@@ -139,13 +152,21 @@ struct ReviewView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(word.term)
                     .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(AppTheme.primary)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
 
-                Text("\(word.reading)  |  \(word.romaji)")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.muted)
+                // 翻面前不显示读音和 romaji：这张卡练的是「看汉字想意思」，
+                // 预先给出读音等于泄题（romaji 更是纯噪音）。
+                if revealed {
+                    Text("\(word.reading)  |  \(word.romaji)")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.ink3)
+                } else {
+                    Text("先想一下它的意思，再点下面的卡片")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.ink3)
+                }
             }
 
             Spacer(minLength: 8)
@@ -155,17 +176,21 @@ struct ReviewView: View {
                     store.toggleFavorite(word)
                 } label: {
                     Image(systemName: store.isFavorite(word) ? "star.fill" : "star")
-                        .foregroundStyle(store.isFavorite(word) ? Theme.accent : Theme.muted)
+                        .foregroundStyle(store.isFavorite(word) ? AppTheme.primary : AppTheme.ink3)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(store.isFavorite(word) ? "取消收藏" : "收藏")
 
-                Button {
-                    revealed.toggle()
-                } label: {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(Theme.muted)
+                if store.canUndoGrade {
+                    Button {
+                        undo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .foregroundStyle(AppTheme.ink3)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("撤销上一次评分")
                 }
-                .buttonStyle(.plain)
             }
             .font(.system(size: 17))
         }
@@ -173,11 +198,13 @@ struct ReviewView: View {
 
     private func actionPills(_ word: Word) -> some View {
         HStack(spacing: 8) {
-            capsule("发音", icon: "speaker.wave.2.fill") {
-                Speech.shared.speak(word.reading, rate: store.settings.speechRate)
-            }
-            capsule("慢速", icon: "tortoise.fill") {
-                Speech.shared.speak(word.reading, rate: max(0.30, store.settings.speechRate - 0.15))
+            if revealed {
+                capsule("发音", icon: "speaker.wave.2.fill") {
+                    Speech.shared.speak(word.reading, rate: store.settings.speechRate)
+                }
+                capsule("慢速", icon: "tortoise.fill") {
+                    Speech.shared.speak(word.reading, rate: max(0.30, store.settings.speechRate - 0.15))
+                }
             }
             capsule("收藏", icon: "star.fill") {
                 store.toggleFavorite(word)
@@ -194,10 +221,10 @@ struct ReviewView: View {
                 Text(title)
                     .font(.footnote)
             }
-            .foregroundStyle(Theme.indigo)
+            .foregroundStyle(AppTheme.ink2)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(Theme.mint.opacity(0.55), in: Capsule())
+            .background(AppTheme.primarySoft, in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -210,22 +237,22 @@ struct ReviewView: View {
                 if revealed {
                     Text(word.meaning)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(AppTheme.ink)
                         .multilineTextAlignment(.center)
                     HStack(spacing: 6) {
-                        Pill(text: word.partOfSpeech, tint: Theme.indigo)
-                        Pill(text: word.jlpt, tint: Theme.accent)
+                        Pill(text: word.partOfSpeech, tint: AppTheme.ink2)
+                        Pill(text: word.jlpt, tint: AppTheme.primary)
                     }
                 } else {
                     Text("点击查看词义")
                         .font(.subheadline)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(AppTheme.primary)
                 }
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: 96)
             .padding(12)
-            .background(Theme.mint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(AppTheme.primarySoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -234,24 +261,25 @@ struct ReviewView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("单词例句")
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.indigo)
+                .foregroundStyle(AppTheme.ink2)
                 .padding(.bottom, 3)
                 .overlay(alignment: .bottom) {
                     Rectangle()
-                        .fill(Theme.accent)
+                        .fill(AppTheme.primary)
                         .frame(height: 1.6)
                 }
 
             if let example = word.example {
                 Text(example)
                     .font(.system(size: 17))
+                    .foregroundStyle(AppTheme.ink)
                     .lineSpacing(4)
             }
 
             if let zh = word.exampleZh {
                 Text(zh)
                     .font(.subheadline)
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(AppTheme.ink3)
             }
 
             HStack(spacing: 14) {
@@ -260,7 +288,7 @@ struct ReviewView: View {
                 } label: {
                     Label("发音", systemImage: "speaker.wave.2.fill")
                         .font(.caption)
-                        .foregroundStyle(Theme.indigo)
+                        .foregroundStyle(AppTheme.ink2)
                 }
                 .buttonStyle(.plain)
 
@@ -269,7 +297,7 @@ struct ReviewView: View {
                 } label: {
                     Label("收藏", systemImage: "star.fill")
                         .font(.caption)
-                        .foregroundStyle(Theme.indigo)
+                        .foregroundStyle(AppTheme.ink2)
                 }
                 .buttonStyle(.plain)
 
@@ -289,11 +317,12 @@ struct ReviewView: View {
                     Text(grade.title)
                         .font(.footnote.weight(.medium))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .frame(minHeight: 44)
                         .background(tint(grade).opacity(0.14), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(tint(grade))
+                .accessibilityLabel("\(grade.title)：\(grade.subtitle)")
             }
         }
         .padding(.top, 4)
@@ -310,35 +339,37 @@ struct ReviewView: View {
                     Text("列表")
                         .font(.subheadline)
                 }
-                .foregroundStyle(Theme.indigo)
+                .foregroundStyle(AppTheme.ink2)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
             }
             .buttonStyle(.plain)
 
             Spacer(minLength: 0)
 
+            // 跳过：不评分，只是往下走。原来这里是「下一词」但按的是 .good，
+            // 和上方四档里的「记得」重复，却长得像跳过。
             Button {
-                pick(.good)
+                skip()
             } label: {
                 HStack(spacing: 5) {
-                    Text("下一词")
+                    Text("跳过")
                         .font(.subheadline.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.footnote.weight(.semibold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(AppTheme.ink2)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 11)
-                .background(Theme.accent.opacity(revealed ? 1 : 0.35), in: Capsule())
+                .background(AppTheme.primarySoft, in: Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(!revealed)
+            .accessibilityHint("不评分，这张卡保持当前记忆状态")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Theme.paper)
+        .background(AppTheme.bgMint)
     }
 
     // MARK: - 结算
@@ -357,12 +388,13 @@ struct ReviewView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 40, weight: .light))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(AppTheme.primary)
                     Text("这一轮结束了")
                         .font(.title3.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
                     Text("共 \(counts.total) 张 · 记得 \(counts.good + counts.easy) · 模糊 \(counts.hard) · 忘了 \(counts.again)")
                         .font(.footnote)
-                        .foregroundStyle(Theme.muted)
+                        .foregroundStyle(AppTheme.ink3)
                 }
             }
 
@@ -373,11 +405,12 @@ struct ReviewView: View {
             } label: {
                 Text("再来一轮")
             }
-            .buttonStyle(PrimaryButtonStyle(fill: Theme.accent))
+            .buttonStyle(PrimaryButtonStyle(fill: AppTheme.primary))
 
-            Text("忘了的词会在 10 分钟后再出现。")
+            Text("忘了的词会回到本轮末尾再过一次；记忆曲线已经把它排到 10 分钟后。")
                 .font(.caption2)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
+                .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
@@ -391,6 +424,7 @@ struct ReviewView: View {
         index = 0
         revealed = false
         counts = SessionCounts()
+        gradedThisRound.removeAll()
         phase = queue.isEmpty ? .done : .running
     }
 
@@ -404,22 +438,38 @@ struct ReviewView: View {
 
     private func tint(_ grade: ReviewGrade) -> Color {
         switch grade {
-        case .again: return Color(red: 0.78, green: 0.32, blue: 0.28)
-        case .hard: return Color(red: 0.72, green: 0.52, blue: 0.20)
-        case .good: return Theme.accent
-        case .easy: return Theme.jade
+        case .again: return AppTheme.danger
+        case .hard: return AppTheme.warning
+        case .good: return AppTheme.primary
+        case .easy: return AppTheme.success
         }
     }
 
     private func pick(_ grade: ReviewGrade) {
         guard let word = current else { return }
-        store.grade(word: word, grade: grade)
-        counts.record(grade)
 
-        if grade == .again, queue.count < 200 {
+        // 同一张卡本轮只评一次：不然「忘了」回到队尾再答一次，会被罚第二遍。
+        if !gradedThisRound.contains(word.id) {
+            store.grade(word: word, grade: grade)
+            counts.record(grade)
+            gradedThisRound.insert(word.id)
+        }
+
+        // 忘了的词回到队尾再过一遍（只是复习，不重复记分）。
+        if grade == .again,
+           queue.count < 200,
+           !queue.dropLast().contains(where: { $0.id == word.id }) {
             queue.append(word)
         }
 
+        advance()
+    }
+
+    private func skip() {
+        advance()
+    }
+
+    private func advance() {
         revealed = false
         if index + 1 >= queue.count {
             index = queue.count
@@ -427,6 +477,16 @@ struct ReviewView: View {
         } else {
             withAnimation(.easeInOut(duration: 0.18)) { index += 1 }
         }
+    }
+
+    private func undo() {
+        guard store.undoLastGrade() else { return }
+        if index > 0 { index -= 1 }
+        revealed = false
+        if let word = current {
+            gradedThisRound.remove(word.id)
+        }
+        phase = .running
     }
 }
 
@@ -447,23 +507,24 @@ struct QueueListView: View {
                             HStack(spacing: 6) {
                                 Text(word.meaning)
                                     .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(AppTheme.ink)
                                 Text("｜")
-                                    .foregroundStyle(Theme.muted)
+                                    .foregroundStyle(AppTheme.ink3)
                                 Text(word.reading)
                                     .font(.subheadline)
-                                    .foregroundStyle(Theme.muted)
+                                    .foregroundStyle(AppTheme.ink3)
                             }
 
                             tagRow("日文", word.term)
                             tagRow("中文", word.meaning)
 
                             if offset == currentIndex {
-                                Text("点击查看词义")
+                                Text("当前这一张")
                                     .font(.footnote)
-                                    .foregroundStyle(Theme.accent)
+                                    .foregroundStyle(AppTheme.primary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
-                                    .background(Theme.mint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .background(AppTheme.primarySoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                     .padding(.top, 2)
                             }
                         }
@@ -471,13 +532,13 @@ struct QueueListView: View {
                         .padding(.vertical, 12)
 
                         Rectangle()
-                            .fill(Theme.hairline.opacity(0.4))
+                            .fill(AppTheme.hairline)
                             .frame(height: 0.6)
                             .padding(.leading, 16)
                     }
                 }
             }
-            .background(Theme.paper.ignoresSafeArea())
+            .background(AppTheme.bgMint.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -492,13 +553,13 @@ struct QueueListView: View {
         HStack(alignment: .top, spacing: 8) {
             Text(tag)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.indigo)
+                .foregroundStyle(AppTheme.ink2)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Theme.mint, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .background(AppTheme.primarySoft, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             Text(text)
                 .font(.footnote)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

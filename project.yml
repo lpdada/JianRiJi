@@ -5,14 +5,28 @@ options:
     iOS: "16.0"
   createIntermediateGroups: true
   groupSortPosition: top
+  # 让空的 Features/ 子目录也能进工程，重命名目录时不会丢 group。
+  generateEmptyDirectories: true
 
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "0.4.0"
-    CURRENT_PROJECT_VERSION: "6"
+    MARKETING_VERSION: "0.5.0"
+    CURRENT_PROJECT_VERSION: "7"
     CODE_SIGN_STYLE: Automatic
-    SWIFT_STRICT_CONCURRENCY: minimal
+    # 原来是最宽松的 minimal，等于关闭了跨 actor 的可变状态检查。
+    # targeted 足以抓出「非 MainActor 类里改共享状态」这类问题（Speech / SpeechLoop 就是这么漏掉的），
+    # 升到 complete 需要把音频层的 delegate 回调一并迁移，留作下一步。
+    SWIFT_STRICT_CONCURRENCY: targeted
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: YES
+    # 编译期点名「类型检查过慢的表达式」和「过长函数」——它们通常是编译时间失控的元凶。
+    OTHER_SWIFT_FLAGS:
+      - $(inherited)
+      - -warn-long-expression-type-checking=200
+      - -warn-long-function-bodies=200
 
 targets:
   JianRiJi:
@@ -32,6 +46,14 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         SUPPORTS_MACCATALYST: NO
+        # 存档、语音包、缓存都在 Application Support / Caches 下，不需要 iCloud 容器。
+        ENABLE_ONLY_ACTIVE_ARCH: NO
+      configs:
+        Debug:
+          SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+        # Release 把警告当错误：CI 绿着但满屏 warning 的工程算不上可交付。
+        Release:
+          SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
 
   JianRiJiTests:
     type: bundle.unit-test
@@ -55,6 +77,11 @@ schemes:
       config: Debug
     test:
       config: Debug
-      gatherCoverageData: false
+      # 覆盖率必须开：持久化、SRS、语音包格式这几块没有覆盖率就等于没测。
+      gatherCoverageData: true
+      coverageTargets:
+        - JianRiJi
       targets:
         - JianRiJiTests
+    analyze:
+      config: Debug

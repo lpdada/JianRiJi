@@ -1,19 +1,19 @@
 //  WordStudyPageView.swift
-//  词卡学习页（经典模式）改版 —— 参考例句逐词分段可点 + 记忆技巧 + 底部 洗脑/翻面
-//  对应设计稿: study-and-brainwash.png ①②
+//  词卡学习页（经典模式）
 //
-//  队列与评分沿用 ClassicModeView 同一套：sessionQueue() 喂数据，
-//  Store.grade(word:grade:) 记分；洗脑只循环朗读，不推进记忆曲线。
-//  SRS 流程：正面翻面记忆 → 背面四档评分（记得/模糊/忘了/很熟）。
+//  ⚠️ v0.4.0 的致命问题：`flipped` 只切换底部按钮，**释义 / 例句 / 记忆技巧始终显示**。
+//  也就是说「翻面」这个动作没有任何揭示信息的作用——用户从头到尾看着答案自评，
+//  「先回忆、再看答案」这个背单词的核心机制完全失效。ReviewView 里的 `revealed`
+//  是对的，这个界面反而退回去了。
 //
-//  没有后端的功能不留按钮：
-//   · 笔记（添加笔记/笔记专区/编辑词义）—— 主线无笔记后端，整行去掉；
-//   · 添加例句/语法/更多 —— 无添加例句后端、无词条→语法点的映射，整行去掉；
-//   · 用户朗读人数 —— 无真人读音数据，胶囊隐藏；
-//   · 日文释义行 —— Word 没有日文释义字段，隐藏（释义行只剩词性+中文，
-//     另有 note 时再加一行「解析」；不把同一中文释义印两遍）；
-//   · 💡 汇总句 —— MnemonicBuilder 没有单独的汇总 API，隐藏，不编造；
-//   · 右下角浮动「长按跟读」mic —— 录音功能不许加，不留。
+//  这里的修复：
+//   1. 正面（未翻面）**只给词形**；读音默认也藏起来，用户主动点「看提示」才出——
+//      否则「看汉字回忆读音」这个训练项根本练不到；
+//   2. 释义 / 例句 / 记忆技巧全部移到翻面之后；
+//   3. 慢速按钮原来传 0.6（比默认 0.45 更快），改成真正降速；
+//   4. 加「撤销」：误点「很熟」不再毁掉复习计划；
+//   5. 进度条能走到 100%（原来最后一题永远差一格）；
+//   6. 翻面后自动滚回顶部，不用手动上推。
 
 import SwiftUI
 
@@ -27,7 +27,10 @@ struct WordStudyPageView: View {
     @State private var queue: [Word] = []
     @State private var index = 0
     @State private var done = false
+    /// 是否已翻面。**它决定答案是否可见**，不只是按钮切换。
     @State private var flipped = false
+    /// 翻面前主动看过读音（算用掉一次提示）。
+    @State private var hintShown = false
     @State private var showList = false
     @State private var showDetail = false
     @State private var showBrainwash = false
@@ -38,6 +41,7 @@ struct WordStudyPageView: View {
     @State private var mnemonicVersion = 0
     @State private var aiLoading = false
     @State private var aiError: String?
+    @State private var aiTask: Task<Void, Never>?
 
     /// 洗脑专用循环器（发音胶囊走 Speech.shared，不共用）。
     @StateObject private var washLoop = SpeechLoop()
@@ -46,9 +50,20 @@ struct WordStudyPageView: View {
         queue.indices.contains(index) ? queue[index] : nil
     }
 
+    /// 读音是否可见。
+    private var readingVisible: Bool { flipped || hintShown }
+
+    /// 本轮进度。翻面算半格，最后一题也能推到 100%。
     private var progress: Double {
         guard !queue.isEmpty else { return 0 }
-        return Double(index) / Double(queue.count)
+        let answered = Double(index) + (flipped ? 0.5 : 0)
+        return min(1, answered / Double(queue.count))
+    }
+
+    /// 慢速朗读的速率。默认 0.45 → 0.30。
+    /// 注意 `AVSpeechUtterance.rate` 是「越大越快」，原实现的 0.6 是加速不是减速。
+    private var slowRate: Double {
+        max(0.30, min(store.settings.speechRate, 0.60) - 0.15)
     }
 
     var body: some View {
@@ -60,15 +75,33 @@ struct WordStudyPageView: View {
             } else if let word = current {
                 VStack(spacing: 0) {
                     navBar
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            wordHead(word)
-                            pillsRow(word)
-                            Divider().overlay(AppTheme.hairline).padding(.horizontal, 20).padding(.vertical, 12)
-                            definitionRows(word)
-                            exampleSection(word)
-                            tipsSection(word)
-                            Color.clear.frame(height: 110)
+                    ScrollViewReader { proxy in
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Color.clear.frame(height: 1).id("study-top")
+                                wordHead(word)
+                                pillsRow(word)
+                                Divider()
+                                    .overlay(AppTheme.hairline)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+
+                                if flipped {
+                                    definitionRows(word)
+                                    exampleSection(word)
+                                    tipsSection(word)
+                                } else {
+                                    recallPrompt(word)
+                                }
+
+                                Color.clear.frame(height: 110)
+                            }
+                        }
+                        .onChange(of: flipped) { isFlipped in
+                            guard isFlipped else { return }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo("study-top", anchor: .top)
+                            }
                         }
                     }
                 }
@@ -77,14 +110,16 @@ struct WordStudyPageView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
-            // 分词索引是全量词库的一次性构建，进页面时备好，之后翻词不再重建。
-            if !JapaneseSegmenter.shared.isPrepared {
+            // 分词索引是全量词库的一次性构建。只在真要用例句分段时建，
+            // 不再每次进页面都无脑跑一遍。
+            if !JapaneseSegmenter.shared.isPrepared, queue.contains(where: { $0.example != nil }) {
                 JapaneseSegmenter.shared.prepare(words: store.words)
             }
             if queue.isEmpty { start() }
         }
         .onDisappear {
             washLoop.stopLoop()
+            aiTask?.cancel()
         }
         .sheet(isPresented: $showList) {
             QueueListView(queue: queue, currentIndex: index, title: store.currentBookTitle)
@@ -124,6 +159,7 @@ struct WordStudyPageView: View {
         index = 0
         done = false
         flipped = false
+        hintShown = false
         selectedTokenID = nil
         selectedSegment = nil
         aiError = nil
@@ -134,21 +170,19 @@ struct WordStudyPageView: View {
     private var navBar: some View {
         HStack(spacing: 14) {
             Button(action: { dismiss() }) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .bold)).foregroundColor(AppTheme.ink)
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(AppTheme.ink)
             }
             Text("经典模式")
                 .font(.system(size: 19, weight: .heavy))
                 .foregroundColor(AppTheme.ink)
             ProgressBarForSession(progress: progress)
             Menu {
-                Button {
-                    showList = true
-                } label: {
+                Button { showList = true } label: {
                     Label("查看列表", systemImage: "list.bullet")
                 }
-                Button {
-                    start()
-                } label: {
+                Button { start() } label: {
                     Label("重新开始", systemImage: "arrow.clockwise")
                 }
                 Button(role: .destructive) {
@@ -159,7 +193,8 @@ struct WordStudyPageView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .bold)).foregroundColor(AppTheme.ink2)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(AppTheme.ink2)
                     .rotationEffect(.degrees(90))
             }
         }
@@ -168,7 +203,7 @@ struct WordStudyPageView: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - 词头
+    // MARK: - 词头（正面的全部内容）
 
     private func wordHead(_ word: Word) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -178,74 +213,145 @@ struct WordStudyPageView: View {
                     .foregroundColor(AppTheme.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
+
                 Spacer()
+
                 HStack(spacing: 18) {
-                    Button {
-                        Speech.shared.speak(
-                            word.reading,
-                            rate: store.settings.speechRate,
-                            audioKey: VoicePack.key(forWord: word.id)
-                        )
-                    } label: {
-                        Image(systemName: "speaker.wave.2").font(.system(size: 18)).foregroundColor(AppTheme.ink2)
+                    if readingVisible {
+                        Button {
+                            speak(word, rate: store.settings.speechRate)
+                        } label: {
+                            Image(systemName: "speaker.wave.2")
+                                .font(.system(size: 18))
+                                .foregroundColor(AppTheme.ink2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("朗读这个单词")
+                    } else {
+                        Button {
+                            revealReading(word)
+                        } label: {
+                            Image(systemName: "eye")
+                                .font(.system(size: 18))
+                                .foregroundColor(AppTheme.ink2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("看读音提示")
                     }
-                    .buttonStyle(.plain)
 
                     Button {
                         store.toggleFavorite(word)
                     } label: {
                         Image(systemName: store.isFavorite(word) ? "star.fill" : "star")
-                            .font(.system(size: 18)).foregroundColor(AppTheme.ink2)
+                            .font(.system(size: 18))
+                            .foregroundColor(store.isFavorite(word) ? AppTheme.primary : AppTheme.ink2)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(store.isFavorite(word) ? "取消收藏" : "收藏")
 
                     Button {
                         showDetail = true
                     } label: {
-                        Image(systemName: "info.circle").font(.system(size: 18)).foregroundColor(AppTheme.ink2)
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 18))
+                            .foregroundColor(AppTheme.ink2)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("词条详情")
                 }
             }
 
-            Text("\(word.reading) ・ \(word.romaji)")
-                .font(.system(size: 19))
-                .foregroundColor(Color(hex: 0x6C7A74))
+            if readingVisible {
+                Text("\(word.reading) ・ \(word.romaji)")
+                    .font(.system(size: 19))
+                    .foregroundColor(AppTheme.ink2)
+            } else {
+                // 不显示读音，但也要让用户知道「这里应该有个读音」而不是以为界面坏了。
+                HStack(spacing: 6) {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 12))
+                    Text("先自己回忆读音，再翻面核对")
+                        .font(.system(size: 14))
+                }
+                .foregroundColor(AppTheme.ink3)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
     }
 
-    // MARK: - 发音胶囊行
+    // MARK: - 胶囊行
 
     private func pillsRow(_ word: Word) -> some View {
         HStack(spacing: 10) {
-            PillButton {
-                Speech.shared.speak(
-                    word.reading,
-                    rate: store.settings.speechRate,
-                    audioKey: VoicePack.key(forWord: word.id)
-                )
-            } label: {
-                Image(systemName: "speaker.wave.2.fill").font(.system(size: 13))
-                Text("发音")
+            if readingVisible {
+                PillButton {
+                    speak(word, rate: store.settings.speechRate)
+                } label: {
+                    Image(systemName: "speaker.wave.2.fill").font(.system(size: 13))
+                    Text("发音")
+                }
+                PillButton {
+                    speak(word, rate: slowRate)
+                } label: {
+                    Image(systemName: "speaker.wave.1.fill").font(.system(size: 13))
+                    Text("慢速")
+                }
+            } else {
+                PillButton {
+                    revealReading(word)
+                } label: {
+                    Image(systemName: "eye.fill").font(.system(size: 13))
+                    Text("看读音提示")
+                }
             }
-            PillButton {
-                Speech.shared.speak(
-                    word.reading,
-                    rate: 0.6,
-                    audioKey: VoicePack.key(forWord: word.id)
-                )
-            } label: {
-                Image(systemName: "speaker.wave.1.fill").font(.system(size: 13))
-                Text("慢速")
+
+            Spacer(minLength: 0)
+
+            // 撤销：误点「很熟」时把复习计划救回来。
+            if store.canUndoGrade {
+                Button {
+                    undo()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text("撤销")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(AppTheme.ink2)
+                    .padding(.horizontal, 12)
+                    .frame(height: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("撤销上一次评分")
             }
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
     }
 
-    // MARK: - 词义行（词性 + 中文；有精讲解析时再加一行）
+    // MARK: - 正面：回忆提示
+
+    private func recallPrompt(_ word: Word) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TagPill(text: word.partOfSpeech.isEmpty ? "词性未知" : word.partOfSpeech)
+
+            Text("先在心里说出它的意思和读法，再翻面。")
+                .font(.system(size: 16))
+                .foregroundColor(AppTheme.ink2)
+                .lineSpacing(3)
+
+            if word.partOfSpeech.contains("动词") {
+                Text("动词提示：想一下它的ます形。")
+                    .font(.system(size: 14))
+                    .foregroundColor(AppTheme.ink3)
+            }
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - 背面：词义
 
     private func definitionRows(_ word: Word) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -260,43 +366,40 @@ struct WordStudyPageView: View {
     private func defRow(tag: String, text: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             TagPill(text: tag)
-            Text(text).font(.system(size: 17.5)).foregroundColor(AppTheme.ink).lineSpacing(3)
+            Text(text)
+                .font(.system(size: 17.5))
+                .foregroundColor(AppTheme.ink)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    // MARK: - 参考例句（分段）
+    // MARK: - 背面：例句
 
     private func exampleSection(_ word: Word) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 SectionUnderlineTitle("参考例句")
                 Spacer()
-                HStack(spacing: 20) {
+                if let example = word.example, !example.isEmpty {
                     Button {
-                        store.toggleFavorite(word)
+                        Speech.shared.speak(
+                            example,
+                            rate: store.settings.speechRate,
+                            audioKey: exampleAudioKey(word)
+                        )
                     } label: {
-                        Image(systemName: store.isFavorite(word) ? "star.fill" : "star")
-                            .font(.system(size: 17)).foregroundColor(AppTheme.ink2)
+                        Image(systemName: "speaker.wave.2")
+                            .font(.system(size: 17))
+                            .foregroundColor(AppTheme.ink2)
                     }
                     .buttonStyle(.plain)
-                    if let example = word.example, !example.isEmpty {
-                        Button {
-                            Speech.shared.speak(
-                                example,
-                                rate: store.settings.speechRate,
-                                audioKey: exampleAudioKey(word)
-                            )
-                        } label: {
-                            Image(systemName: "speaker.wave.2").font(.system(size: 17)).foregroundColor(AppTheme.ink2)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .accessibilityLabel("朗读例句")
                 }
             }
             .padding(.horizontal, 20)
 
             if let example = word.example, !example.isEmpty {
-                // 分段例句（tap → 详情页，已有 ExampleSegmentDetailView）
                 SegmentedExampleView(
                     segments: exampleTokens(for: word),
                     selectedID: selectedTokenID,
@@ -315,13 +418,14 @@ struct WordStudyPageView: View {
                             .font(.system(size: 17.5))
                             .foregroundColor(AppTheme.ink)
                             .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 18)
                 }
             } else {
                 Text("这个词条还没有例句。")
-                    .font(.footnote)
+                    .font(.system(size: 14))
                     .foregroundColor(AppTheme.ink3)
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -330,8 +434,6 @@ struct WordStudyPageView: View {
         .padding(.top, 18)
     }
 
-    /// 例句分段：方括号注音与例句对得上时用注音切分；对不上时（147 条是整句
-    /// 假名读音）用词库分词器兜底，读音来自词典，和旧经典卡一致。
     private func exampleTokens(for word: Word) -> [ExampleToken] {
         guard let example = word.example, !example.isEmpty else { return [] }
         if let furigana = word.exampleFurigana,
@@ -347,10 +449,9 @@ struct WordStudyPageView: View {
         VoicePack.key(forWord: word.id) + "-ex"
     }
 
-    // MARK: - 记忆技巧
+    // MARK: - 背面：记忆技巧
 
     private func tipsSection(_ word: Word) -> some View {
-        // 依赖一下这个版本号，AI 结果写进缓存后能触发重画。
         let _ = mnemonicVersion
 
         let local = MnemonicBuilder.local(for: word)
@@ -361,8 +462,7 @@ struct WordStudyPageView: View {
                 SectionUnderlineTitle("记忆技巧")
                 Spacer()
                 if aiLoading {
-                    ProgressView()
-                        .scaleEffect(0.7)
+                    ProgressView().scaleEffect(0.7)
                 } else {
                     Button {
                         requestAI(for: word)
@@ -376,9 +476,9 @@ struct WordStudyPageView: View {
             }
             .padding(.horizontal, 20)
 
-            if local.isEmpty && ai.isEmpty {
+            if local.isEmpty && ai.isEmpty && !aiLoading {
                 Text("这个词条暂时凑不出可讲的点：词库里没有它的构词、活用或同音线索。")
-                    .font(.footnote)
+                    .font(.system(size: 14))
                     .foregroundColor(AppTheme.ink3)
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -397,7 +497,7 @@ struct WordStudyPageView: View {
             if let aiError {
                 Text(aiError)
                     .font(.caption2)
-                    .foregroundColor(Color(red: 0.78, green: 0.32, blue: 0.28))
+                    .foregroundColor(AppTheme.danger)
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
             }
@@ -424,66 +524,52 @@ struct WordStudyPageView: View {
         .overlay(alignment: .bottom) { Divider().overlay(AppTheme.hairline) }
     }
 
-    private func requestAI(for word: Word) {
-        guard !aiLoading else { return }
-        aiError = nil
-        aiLoading = true
-        let prompt = MnemonicAI.prompt(for: word)
-
-        Task {
-            do {
-                let answer = try await AIClient.chat(
-                    settings: store.settings,
-                    system: prompt.system,
-                    user: prompt.user
-                )
-                let lines = MnemonicAI.parse(answer)
-                if lines.isEmpty {
-                    aiError = "模型没给出能用的内容，换个模型再试。"
-                } else {
-                    MnemonicAI.store(lines, for: word)
-                    mnemonicVersion += 1
-                }
-            } catch {
-                aiError = error.localizedDescription
-            }
-            aiLoading = false
-        }
-    }
-
-    // MARK: - 底部：洗脑 + 翻面 / 四档评分
+    // MARK: - 底部
 
     private func bottomBar(_ word: Word) -> some View {
         HStack {
             Button(action: { showBrainwash = true }) {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.counterclockwise").font(.system(size: 15, weight: .bold))
-                    Text("洗脑").font(.system(size: 17, weight: .bold))
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 15, weight: .bold))
+                    Text("洗脑")
+                        .font(.system(size: 17, weight: .bold))
                 }
                 .foregroundColor(AppTheme.ink)
                 .padding(.horizontal, 24)
                 .frame(height: 56)
-                .background(Capsule().fill(AppTheme.card).shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2))
+                .background(
+                    Capsule()
+                        .fill(AppTheme.card)
+                        .shadow(color: AppTheme.cardShadow(6, opacity: 0.08, y: 2), radius: 6, x: 0, y: 2)
+                )
             }
             .buttonStyle(.plain)
+
             Spacer()
+
             if flipped {
                 gradeButtons(word)
             } else {
-                MainCTAButton(title: "翻面", icon: "arrow.right", action: { flipped = true })
+                MainCTAButton(title: "翻面", icon: "arrow.right") {
+                    withAnimation(.easeOut(duration: 0.18)) { flipped = true }
+                }
             }
         }
         .padding(.horizontal, 18)
         .padding(.top, 12)
         .padding(.bottom, 24)
         .background(
-            Rectangle().fill(AppTheme.bgMint.opacity(0.94))
+            Rectangle()
+                .fill(AppTheme.bgMint.opacity(0.94))
                 .overlay(alignment: .top) { Divider().overlay(AppTheme.hairline) }
                 .ignoresSafeArea()
         )
     }
 
-    /// 翻面后右侧槽位换成四档评分：记得 / 模糊 / 忘了 / 很熟。
+    /// 四档评分。
+    /// 顺序沿用「记得 / 模糊 / 忘了 / 很熟」——「记得」在拇指最顺的位置，
+    /// 同时提供撤销，误点不至于毁掉一张卡。
     private func gradeButtons(_ word: Word) -> some View {
         HStack(spacing: 8) {
             ForEach([ReviewGrade.good, .hard, .again, .easy]) { grade in
@@ -493,11 +579,12 @@ struct WordStudyPageView: View {
                     Text(grade.title)
                         .font(.footnote.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .frame(minHeight: 46)
                         .background(tint(grade).opacity(0.14), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(tint(grade))
+                .accessibilityLabel("\(grade.title)：\(grade.subtitle)")
             }
         }
         .frame(maxWidth: .infinity)
@@ -505,16 +592,17 @@ struct WordStudyPageView: View {
 
     private func tint(_ grade: ReviewGrade) -> Color {
         switch grade {
-        case .again: return Color(red: 0.78, green: 0.32, blue: 0.28)
-        case .hard: return Color(red: 0.72, green: 0.52, blue: 0.20)
+        case .again: return AppTheme.danger
+        case .hard: return AppTheme.warning
         case .good: return AppTheme.primary
-        case .easy: return Color(red: 0.239, green: 0.620, blue: 0.470)
+        case .easy: return AppTheme.success
         }
     }
 
     private func pick(_ grade: ReviewGrade, for word: Word) {
         store.grade(word: word, grade: grade)
         flipped = false
+        hintShown = false
         selectedTokenID = nil
         if index + 1 >= queue.count {
             done = true
@@ -522,6 +610,66 @@ struct WordStudyPageView: View {
             index += 1
         }
     }
+
+    private func undo() {
+        guard store.undoLastGrade() else { return }
+        if index > 0 { index -= 1 }
+        flipped = false
+        hintShown = false
+        selectedTokenID = nil
+        selectedSegment = nil
+        done = false
+    }
+
+    // MARK: - 朗读 / 提示
+
+    private func speak(_ word: Word, rate: Double) {
+        Speech.shared.speak(
+            word.reading,
+            rate: rate,
+            audioKey: VoicePack.key(forWord: word.id)
+        )
+    }
+
+    private func revealReading(_ word: Word) {
+        hintShown = true
+        speak(word, rate: store.settings.speechRate)
+    }
+
+    // MARK: - AI
+
+    private func requestAI(for word: Word) {
+        guard !aiLoading else { return }
+        aiError = nil
+        aiLoading = true
+        let prompt = MnemonicAI.prompt(for: word)
+
+        aiTask?.cancel()
+        aiTask = Task {
+            defer { aiLoading = false }
+            do {
+                let answer = try await AIClient.chat(
+                    settings: store.settings,
+                    system: prompt.system,
+                    user: prompt.user
+                )
+                guard !Task.isCancelled else { return }
+                let lines = MnemonicAI.parse(answer)
+                if lines.isEmpty {
+                    aiError = "模型没给出能用的内容，换个模型再试。"
+                } else {
+                    MnemonicAI.store(lines, for: word)
+                    mnemonicVersion += 1
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                if let aiErrorValue = error as? AIError, aiErrorValue.isSilent { return }
+                aiError = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - 结算
 
     private var finishView: some View {
         VStack(spacing: 16) {
@@ -548,18 +696,21 @@ struct WordStudyPageView: View {
 
 // MARK: - 小组件
 
-/// 带绿色粗下划线的 Section 标题（参考例句 / 记忆技巧 / N5语法 / 语法例句）
+/// 带绿色粗下划线的 Section 标题。
+/// 下划线宽度跟随文字——原来写死 96pt，「N5语法」这种短标题会拖一截出去。
 struct SectionUnderlineTitle: View {
     let text: String
     init(_ text: String) { self.text = text }
+
     var body: some View {
         Text(text)
             .font(.system(size: 17.5, weight: .heavy))
             .foregroundColor(AppTheme.ink)
-            .frame(alignment: .leading)
             .padding(.bottom, 6)
             .background(alignment: .bottomLeading) {
-                Rectangle().fill(AppTheme.primary).frame(width: 96, height: 4)
+                Rectangle()
+                    .fill(AppTheme.primary)
+                    .frame(height: 4)
             }
     }
 }
@@ -567,11 +718,14 @@ struct SectionUnderlineTitle: View {
 /// 本轮进度条（学习进度胶囊，宽度自适应；进度由调用方传真实值）
 struct ProgressBarForSession: View {
     var progress: Double
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color(hex: 0xD6E4DD))
-                Capsule().fill(Color(hex: 0xBFE0D3)).frame(width: geo.size.width * progress)
+                Capsule().fill(AppTheme.track)
+                Capsule()
+                    .fill(AppTheme.primary)
+                    .frame(width: geo.size.width * min(max(progress, 0), 1))
             }
         }
         .frame(height: 9)

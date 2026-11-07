@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// 听写：听读音，敲罗马字，即时判分。
+///
+/// 修复：
+///  1. **重复计分**。`check()` 原来没有 `verdict == .idle` 守卫，连点两次「✓」
+///     会让 `total` 与 `correct` 各加两次，正确率直接失真。
+///  2. 答错时输入框描边用的是主色绿（和答对的 jade 几乎一样），用户分不清对错。
+///  3. 练的是**全库 10660 词**，而拼写模式练的是当前词书——同一个 App 两套口径。
+///  4. 罗马字判分走 `Romanization`（shi/si、长音符都算对）。
 struct DictationView: View {
     @EnvironmentObject private var store: Store
     @Environment(\.dismiss) private var dismiss
@@ -11,6 +19,8 @@ struct DictationView: View {
     @State private var hintShown = false
     @State private var correct = 0
     @State private var total = 0
+
+    @FocusState private var inputFocused: Bool
 
     enum Verdict {
         case idle, right, wrong
@@ -29,7 +39,8 @@ struct DictationView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .background(Theme.paper.ignoresSafeArea())
+            .background(AppTheme.bgMint.ignoresSafeArea())
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("听写")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -50,7 +61,7 @@ struct DictationView: View {
         HStack {
             Text(total == 0 ? "还没开始" : "\(correct) / \(total) 正确")
                 .font(.caption)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
             Spacer()
             Button {
                 Speech.shared.speak(target?.reading ?? "", rate: store.settings.speechRate)
@@ -59,7 +70,7 @@ struct DictationView: View {
             }
             .buttonStyle(.plain)
             .font(.caption)
-            .foregroundStyle(Theme.jade)
+            .foregroundStyle(AppTheme.primary)
         }
     }
 
@@ -70,32 +81,38 @@ struct DictationView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(Theme.accent.opacity(0.12))
+                        .fill(AppTheme.primarySoft)
                         .frame(width: 96, height: 96)
                     Image(systemName: "speaker.wave.3.fill")
                         .font(.system(size: 34, weight: .regular))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(AppTheme.primary)
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("再听一次读音")
 
             Text("听读音，把罗马字敲出来")
                 .font(.footnote)
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(AppTheme.ink3)
 
             if hintShown, let word = target {
                 VStack(spacing: 4) {
                     Text(word.reading)
                         .font(.title3)
+                        .foregroundStyle(AppTheme.ink)
                     Text(word.meaning)
                         .font(.caption)
-                        .foregroundStyle(Theme.muted)
+                        .foregroundStyle(AppTheme.ink3)
                 }
                 .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
-        .paperCard(padding: 20)
+        .padding(.vertical, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(AppTheme.card)
+        )
     }
 
     private var inputArea: some View {
@@ -105,10 +122,12 @@ struct DictationView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .submitLabel(.done)
+                    .focused($inputFocused)
                     .onSubmit(check)
+                    .foregroundStyle(AppTheme.ink)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 11)
-                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .strokeBorder(borderColor, lineWidth: 1.4)
@@ -121,9 +140,10 @@ struct DictationView: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(AppTheme.primary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("提交答案")
             }
 
             HStack(spacing: 10) {
@@ -133,14 +153,14 @@ struct DictationView: View {
                 } label: {
                     Text("看提示")
                 }
-                .buttonStyle(GhostButtonStyle(tint: Theme.indigo))
+                .buttonStyle(GhostButtonStyle(tint: AppTheme.ink2))
 
                 Button {
                     next()
                 } label: {
                     Text("下一题")
                 }
-                .buttonStyle(GhostButtonStyle(tint: Theme.jade))
+                .buttonStyle(GhostButtonStyle(tint: AppTheme.primary))
 
                 Spacer(minLength: 0)
             }
@@ -149,9 +169,9 @@ struct DictationView: View {
 
     private var borderColor: Color {
         switch verdict {
-        case .idle: return Color.primary.opacity(0.08)
-        case .right: return Theme.jade
-        case .wrong: return Theme.accent
+        case .idle: return AppTheme.hairline
+        case .right: return AppTheme.success
+        case .wrong: return AppTheme.danger
         }
     }
 
@@ -163,12 +183,12 @@ struct DictationView: View {
         case .right:
             Text("对了。\(target?.reading ?? "") · \(target?.meaning ?? "")")
                 .font(.footnote)
-                .foregroundStyle(Theme.jade)
+                .foregroundStyle(AppTheme.success)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .wrong:
             Text("正确答案：\(target?.romaji ?? "")　（\(target?.reading ?? "") · \(target?.meaning ?? "")）")
                 .font(.footnote)
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(AppTheme.danger)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -176,7 +196,7 @@ struct DictationView: View {
     private var note: some View {
         Text("听写只是当场的耳力练习，不动你的记忆进度——要推进度，去「背单词」。")
             .font(.caption2)
-            .foregroundStyle(Theme.muted.opacity(0.85))
+            .foregroundStyle(AppTheme.ink3)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -184,7 +204,8 @@ struct DictationView: View {
 
     private func next() {
         if pool.isEmpty {
-            pool = store.words.shuffled()
+            // 和拼写模式对齐：练当前词书，而不是整个 10660 词库。
+            pool = store.scopedWords.shuffled()
             if pool.count > 1, pool.last?.id == target?.id {
                 pool.swapAt(0, pool.count - 1)
             }
@@ -193,25 +214,24 @@ struct DictationView: View {
         input = ""
         verdict = .idle
         hintShown = false
+        inputFocused = true
         Speech.shared.speak(target?.reading ?? "", rate: store.settings.speechRate)
     }
 
     private func check() {
-        guard let word = target, !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let typed = normalize(input)
-        let answer = normalize(word.romaji)
-        let isRight = typed == answer || input.trimmingCharacters(in: .whitespacesAndNewlines) == word.reading
+        guard let word = target,
+              verdict == .idle,
+              !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        // 守卫 `verdict == .idle` 是这次的核心修复：没有它，连点两下会重复累加分数。
+        let isRight = Romanization.matches(typed: input, word: word)
         verdict = isRight ? .right : .wrong
         total += 1
-        if isRight { correct += 1 }
-        if !isRight { hintShown = true }
-    }
-
-    private func normalize(_ text: String) -> String {
-        text.lowercased()
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "　", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if isRight {
+            correct += 1
+        } else {
+            hintShown = true
+        }
+        inputFocused = false
     }
 }

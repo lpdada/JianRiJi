@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- 标准 BCP-47。原来写的是 zh_CN（下划线），系统本地化解析会退回默认语言。 -->
 	<key>CFBundleDevelopmentRegion</key>
-	<string>zh_CN</string>
+	<string>zh-Hans</string>
 	<key>CFBundleDisplayName</key>
 	<string>简日记</string>
 	<key>CFBundleExecutable</key>
@@ -20,6 +21,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.education</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -27,8 +30,12 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<!-- 空字典合法：纯色启动屏，深色模式下自动跟随。要换成品牌色时在 Assets 里加一个
+	     LaunchBackground 颜色集，再填 UIColorName。 -->
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
@@ -44,6 +51,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- 保留：用户可以把自定义朗读音频拖进 Documents/Voice 直接被识别（VoicePack 依赖它）。
+	     代价是 App 的 Documents 目录在「文件」App 里可见，隐私说明里要如实写。 -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
@@ -52,9 +61,19 @@
 	<string>MIT License</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- 随身听后台连播需要。 -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- 只用 HTTPS。NSAllowsLocalNetworking 单独放开，让用户填局域网里的 Edge TTS 代理
+	     （192.168.x.x / 10.x.x.x）时不被 ATS 拦掉；公网仍然强制 HTTPS。 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

@@ -2,7 +2,7 @@ import Foundation
 
 /// 一个分级语法点。数据来自 Resources/grammar_points.json（自编 270 条，N5–N1）。
 /// 除 id / level / title 外都做成可选：以后改表时某列留空，整表不会因此解不出来。
-struct GrammarPoint: Identifiable, Codable, Hashable {
+struct GrammarPoint: Identifiable, Codable, Hashable, Sendable {
     let id: String
     /// JLPT 级别：N5 ... N1
     let level: String
@@ -42,7 +42,7 @@ struct GrammarPoint: Identifiable, Codable, Hashable {
 }
 
 /// 一条例句（日文 + 中文），供 GrammarPoint.examples 用。
-struct GrammarExample: Codable, Hashable {
+struct GrammarExample: Codable, Hashable, Sendable {
     let ja: String
     let zh: String
 }

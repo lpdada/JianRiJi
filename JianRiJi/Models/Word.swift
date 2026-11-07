@@ -1,7 +1,8 @@
 import Foundation
 
 /// 一条词条。字段来自 Resources/seed_words.json。
-struct Word: Identifiable, Codable, Hashable {
+/// `Sendable`：词库在后台任务里解析后跨隔离域交回主线程，加上它才能开严格并发检查。
+struct Word: Identifiable, Codable, Hashable, Sendable {
     let id: String
     /// 表记：学校 / たべる
     let term: String

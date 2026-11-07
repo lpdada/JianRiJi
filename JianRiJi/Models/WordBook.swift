@@ -3,7 +3,7 @@ import Foundation
 /// 一本词书。数据来自 Resources/books.json。
 /// filterType 决定用哪种规则从词库里筛词，加新词书不用改代码；
 /// learned / favorite 两类要读学习状态，由 Store.words(in:) 另外处理。
-struct WordBook: Identifiable, Codable, Hashable {
+struct WordBook: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let title: String
     /// 封面角标，如 初上 / N5 / 日常
