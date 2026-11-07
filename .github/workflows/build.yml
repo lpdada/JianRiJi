@@ -108,6 +108,9 @@ jobs:
             | xcbeautify
 
       # 覆盖率门槛：只卡「核心层掉到 25% 以下」这一种情况，避免为了凑数字写废测试。
+      # 注意：门槛只量 JianRiJi/Core/（Store/SRS/分词/语音等可单元测试的逻辑层），
+      # 不量整包——Features/ 里全是 SwiftUI 视图，单元测试够不着，用整包数做门会永远红
+      # （实测整包 13.4%，核心层 39.7%，视图层 4.5%）。
       - name: Report coverage
         run: |
           set -euo pipefail
@@ -115,12 +118,15 @@ jobs:
           PCT=$(xcrun xccov view --report --json TestResults.xcresult \
             | jq -r '[.targets[] | select(.name | test("JianRiJi.app"))][0].lineCoverage // empty' \
             | awk '{ printf "%.2f", $1 * 100 }')
-          if [ -z "${PCT:-}" ]; then
+          CORE_PCT=$(xcrun xccov view --report --json TestResults.xcresult \
+            | jq -r '[.targets[].files[]? | select(.path | test("/Core/"))] | if length == 0 then empty else ((map(.coveredLines // 0) | add) / (map(.executableLines // 0) | add) * 100) end' \
+            | awk '{ printf "%.2f", $1 }')
+          if [ -z "${PCT:-}" ] || [ -z "${CORE_PCT:-}" ]; then
             echo "::warning::拿不到覆盖率数字，跳过门槛检查"
             exit 0
           fi
-          echo "JianRiJi line coverage: ${PCT}%"
-          awk -v p="$PCT" 'BEGIN { if (p + 0 < 25) { printf "::error::核心层覆盖率 %.1f%% 低于 25%% 门槛\n", p; exit 1 } }'
+          echo "JianRiJi line coverage: ${PCT}% (core: ${CORE_PCT}%)"
+          awk -v p="$CORE_PCT" 'BEGIN { if (p + 0 < 25) { printf "::error::核心层覆盖率 %.1f%% 低于 25%% 门槛\n", p; exit 1 } }'
 
       - name: Upload test results
         if: always()
