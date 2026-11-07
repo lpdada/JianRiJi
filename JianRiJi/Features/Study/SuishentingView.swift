@@ -12,6 +12,7 @@ struct SuishentingView: View {
     @State private var speakMeaning = false
     @State private var interval: Double = 3.0
     @State private var task: Task<Void, Never>?
+    @State private var showBrainwashSettings = false
 
     private var current: Word? {
         words.indices.contains(cursor) ? words[cursor] : nil
@@ -142,8 +143,25 @@ struct SuishentingView: View {
                 Slider(value: $interval, in: 1.5...8, step: 0.5)
                     .tint(Theme.accent)
             }
+
+            // 洗脑设置入口：只进设置页，不动随身听本身的播放逻辑。
+            Button {
+                showBrainwashSettings = true
+            } label: {
+                HStack {
+                    Text("洗脑设置").font(.subheadline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+            .buttonStyle(.plain)
         }
         .paperCard(padding: 16)
+        .sheet(isPresented: $showBrainwashSettings) {
+            BrainwashSettingsView()
+        }
     }
 
     private var queuePreview: some View {
