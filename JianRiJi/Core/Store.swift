@@ -112,8 +112,8 @@ struct DayCount: Identifiable, Hashable {
     var id: Date { day }
     let day: Date
     let count: Int
-    // count 是当日学习条数的非负求和，<= 0 即为空（不用 == 0：empty_count 规则会拦）。
-    var isEmpty: Bool { count <= 0 }
+    // swiftlint:disable:next empty_count — 此行本身就是 isEmpty 的实现；规则在字面上无法适用于 isEmpty 自身（count 与 0 的任何比较都会被它拦）。其余全树仍受规则约束。
+    var isEmpty: Bool { count == 0 }
 }
 
 /// 落盘用的整体快照。
